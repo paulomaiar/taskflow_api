@@ -2,14 +2,30 @@
   {
     "id": 1,
     "texto": "Testar integração Node e React",
-    "prioridade": "alta",
-    "coluna": "A FAZER",
-    "cidade": "Natal"
+    "prioridade": "media",
+    "coluna": "CONCLUÍDA",
+    "cidade": "Natal",
+    "concluida": true
   },
   {
     "id": 7766,
     "texto": "commit",
     "prioridade": "media",
+    "coluna": "A FAZER",
+    "cidade": ""
+  },
+  {
+    "id": 4859,
+    "texto": "teste api",
+    "prioridade": "media",
+    "coluna": "EM ANDAMENTO",
+    "cidade": "",
+    "concluida": false
+  },
+  {
+    "id": 6103,
+    "texto": "api rest",
+    "prioridade": "alta",
     "coluna": "A FAZER",
     "cidade": ""
   }

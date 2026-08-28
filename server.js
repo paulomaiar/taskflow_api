@@ -4,13 +4,20 @@ const crypto = require('crypto');
 
 const { 
   ListarTarefas, 
-  BuscarPorId, 
+  BuscarTarefa, 
   AdicionarTarefas, 
   AtualizarTarefa, 
-  DeletarTarefas 
+  DeletarTarefas,
+  obterMaisFrequente
 } = require('./utils/tarefas');
 
-const { ListarUsuarios, AdicionarUsuario } = require('./usuarios');
+const { 
+  ListarUsuarios, 
+  BuscarUsuario, 
+  AdicionarUsuario, 
+  AtualizarUsuario, 
+  DeletarUsuario 
+} = require('./utils/usuarios');
 
 const app = express();
 const PORTA = 3000;
@@ -18,32 +25,26 @@ const PORTA = 3000;
 app.use(express.json());
 app.use(cors());
 
-// Rota raiz
 app.get('/', (req, res) => {
   res.json({ mensagem: 'TaskFlow API funcionando!' });
 });
 
-// 1. GET /tarefas (Todas as tarefas ou filtradas)
+// --- ROTAS DE TAREFAS ---
+
 app.get('/tarefas', async (req, res) => {
   const tarefas = await ListarTarefas();
   const { coluna, prioridade } = req.query;
   let resultado = tarefas;
 
-  if (coluna) {
-    resultado = resultado.filter(t => t.coluna === coluna);
-  }
-
-  if (prioridade) {
-    resultado = resultado.filter(t => t.prioridade === prioridade);
-  }
+  if (coluna) resultado = resultado.filter(t => t.coluna === coluna);
+  if (prioridade) resultado = resultado.filter(t => t.prioridade === prioridade);
 
   res.json(resultado);
 });
 
-// 2. GET /tarefas/:id (Buscar uma por ID)
 app.get('/tarefas/:id', async (req, res) => {
   const id = Number(req.params.id);
-  const tarefa = await BuscarPorId(id);
+  const tarefa = await BuscarTarefa(id);
 
   if (!tarefa) {
     return res.status(404).json({ erro: 'Tarefa não encontrada' });
@@ -52,7 +53,6 @@ app.get('/tarefas/:id', async (req, res) => {
   res.json(tarefa);
 });
 
-// 3. POST /tarefas (Criar nova tarefa)
 app.post('/tarefas', async (req, res) => {
   const { texto, prioridade, coluna, cidade } = req.body;
 
@@ -64,7 +64,7 @@ app.post('/tarefas', async (req, res) => {
     id: crypto.randomInt(1000, 10000),
     texto: texto,
     prioridade: prioridade || 'media',
-    coluna: coluna || 'A FAZER', // Padronizado com o React
+    coluna: coluna || 'A FAZER',
     cidade: cidade || '',
   };
 
@@ -72,7 +72,6 @@ app.post('/tarefas', async (req, res) => {
   res.status(201).json(novaTarefa);
 });
 
-// 4. PUT /tarefas/:id (Atualizar tarefa existente)
 app.put('/tarefas/:id', async (req, res) => {
   const id = Number(req.params.id);
   const tarefaAtualizada = await AtualizarTarefa(id, req.body);
@@ -84,7 +83,6 @@ app.put('/tarefas/:id', async (req, res) => {
   res.json(tarefaAtualizada);
 });
 
-// 5. DELETE /tarefas/:id (Remover tarefa)
 app.delete('/tarefas/:id', async (req, res) => {
   const id = Number(req.params.id);
   const deletado = await DeletarTarefas(id);
@@ -96,29 +94,110 @@ app.delete('/tarefas/:id', async (req, res) => {
   res.json({ mensagem: 'Tarefa removida com sucesso', id });
 });
 
-// Rotas de Usuários
+// --- ROTAS DE USUÁRIOS ---
+
 app.get('/usuarios', async (req, res) => {
   const usuarios = await ListarUsuarios();
   res.json(usuarios);
 });
 
-app.post('/usuarios', async (req, res) => {
-  const { nome } = req.body;
+app.get('/usuarios/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const usuario = await BuscarUsuario(id);
 
-  if (!nome) {
-    return res.status(400).json({ erro: 'O campo nome é obrigatório' });
+  if (!usuario) {
+    return res.status(404).json({ erro: 'Usuário não encontrado' });
+  }
+
+  res.json(usuario);
+});
+
+app.post('/usuarios', async (req, res) => {
+  const { nome, email } = req.body;
+
+  if (!nome || !email) {
+    return res.status(400).json({ erro: 'Faltando campo nome ou email' });
   }
 
   const novoUsuario = {
     id: crypto.randomInt(1000, 10000),
+    email: email,
     nome: nome
   };
 
-  await AdicionarUsuario(novoUsuario);
-  res.status(201).json(novoUsuario);
+  try {
+    await AdicionarUsuario(novoUsuario);
+    res.status(201).json(novoUsuario);
+  } catch (erro) {
+    res.status(400).json({ erro: erro.message });
+  }
 });
 
-// Rota para tratar 404 (não encontrada)
+app.put('/usuarios/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const usuario = await AtualizarUsuario(id, req.body);
+
+  if (!usuario) {
+    return res.status(404).json({ erro: 'Usuário não encontrado' });
+  }
+
+  res.json(usuario);
+});
+
+app.delete('/usuarios/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const deletado = await DeletarUsuario(id);
+
+  if (!deletado) {
+    return res.status(404).json({ erro: 'Usuário não encontrado' });
+  }
+
+  res.json({ mensagem: 'Usuário removido com sucesso', id });
+});
+
+// --- ROTA DE ESTATÍSTICAS ---
+
+app.get('/estatisticas', async (req, res) => {
+  let tarefas = await ListarTarefas();
+  const { coluna } = req.query; // Captura ?coluna=...
+
+  // Se o usuário mandou um filtro na URL, filtramos o array antes de calcular
+  if (coluna) {
+    tarefas = tarefas.filter(
+      t => t.coluna.toLowerCase() === coluna.toLowerCase()
+    );
+  }
+
+  const totalGeral = tarefas.length;
+
+  // Total de tarefas em cada coluna
+  const porColuna = {
+    afazer: tarefas.filter(t => t.coluna.toLowerCase() === 'afazer').length,
+    andamento: tarefas.filter(t => t.coluna.toLowerCase() === 'andamento').length,
+    concluido: tarefas.filter(t => t.coluna.toLowerCase() === 'concluido').length
+  };
+
+  // Total de tarefas em cada prioridade
+  const porPrioridade = {
+    alta: tarefas.filter(t => t.prioridade.toLowerCase() === 'alta').length,
+    media: tarefas.filter(t => t.prioridade.toLowerCase() === 'media').length,
+    baixa: tarefas.filter(t => t.prioridade.toLowerCase() === 'baixa').length
+  };
+
+  // Executa a função do Passo 1 para achar os campeões
+  const colunaComMaisTarefas = obterMaisFrequente(porColuna);
+  const prioridadeMaisComum = obterMaisFrequente(porPrioridade);
+
+  // Devolve o JSON consolidado
+  res.json({
+    totalGeral,
+    porColuna,
+    porPrioridade,
+    colunaComMaisTarefas,
+    prioridadeMaisComum
+  });
+});
+
 app.use((req, res) => {
   res.status(404).json({
     erro: 'Rota não encontrada',

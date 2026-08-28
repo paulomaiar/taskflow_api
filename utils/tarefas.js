@@ -20,7 +20,7 @@ async function salvarArquivo(lista) {
 }
 
 //  Buscar por ID
-async function BuscarPorId(id) {
+async function BuscarTarefa(id) {
   const tarefas = await ListarTarefas(); // Lê o array primeiro
   return tarefas.find(t => t.id === Number(id)); // Busca no array lido
 }
@@ -33,6 +33,25 @@ async function AdicionarTarefas(novaTarefa) {
   return novaTarefa;
 }
 
+// Atualizar Tarefa
+async function AtualizarTarefa(id, dadosNovos) {
+  const tarefas = await ListarTarefas();
+  
+  // Usamos String() para garantir a comparação mesmo se um ID for número e o outro texto
+  const indice = tarefas.findIndex(t => String(t.id) === String(id));
+
+  if (indice === -1) return null;
+
+  // Mescla os dados antigos com os novos, mantendo o ID original
+  tarefas[indice] = {
+    ...tarefas[indice],
+    ...dadosNovos,
+    id: tarefas[indice].id
+  };
+
+  await salvarArquivo(tarefas);
+  return tarefas[indice];
+}
 //  Deletar
 async function DeletarTarefas(id) {
   const tarefas = await ListarTarefas(); // 1. Lê a lista
@@ -44,4 +63,20 @@ async function DeletarTarefas(id) {
   return true;
 }
 
-module.exports = { ListarTarefas, BuscarPorId, AdicionarTarefas, DeletarTarefas };
+function obterMaisFrequente(objetoContagem) {
+  let maiorChave = 'nenhuma';
+  let maiorValor = 0;
+
+  // Object.entries converte o objeto em pares: [['afazer', 3], ['andamento', 5], ...]
+  for (const [chave, valor] of Object.entries(objetoContagem)) {
+    if (valor > maiorValor) {
+      maiorValor = valor; // Atualiza o maior valor encontrado
+      maiorChave = chave; // Guarda o nome da categoria com mais itens
+    }
+  }
+
+  return maiorChave;
+}
+
+
+module.exports = { ListarTarefas, BuscarTarefa, AdicionarTarefas, AtualizarTarefa, DeletarTarefas, obterMaisFrequente };
