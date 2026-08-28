@@ -1,0 +1,11 @@
+node_modules/
+
+# Variáveis de ambiente — podem conter senhas e chaves
+
+.env
+.env.local
+
+# Logs do Node
+
+*.log
+npm-debug.log*
