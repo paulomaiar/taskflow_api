@@ -1,0 +1,56 @@
+const usuarioModel = require('../models/usuarios.models');
+
+async function listar(req, res) {
+  const usuarios = await usuarioModel.listarUsuarios();
+  return res.json(usuarios);
+}
+
+async function buscarPorId(req, res) {
+  const { id } = req.params;
+  const usuario = await usuarioModel.buscarUsuarioPorId(id);
+
+  if (!usuario) {
+    return res.status(404).json({ erro: 'Usuário não encontrado' });
+  }
+
+  return res.json(usuario);
+}
+
+async function criar(req, res) {
+  const { nome, email } = req.body;
+
+  if (!nome || !email) {
+    return res.status(400).json({ erro: 'Faltando campo nome ou email' });
+  }
+
+  try {
+    const novoUsuario = await usuarioModel.adicionarUsuario(req.body);
+    return res.status(201).json(novoUsuario);
+  } catch (erro) {
+    return res.status(400).json({ erro: erro.message });
+  }
+}
+
+async function atualizar(req, res) {
+  const { id } = req.params;
+  const usuarioAtualizado = await usuarioModel.atualizarUsuario(id, req.body);
+
+  if (!usuarioAtualizado) {
+    return res.status(404).json({ erro: 'Usuário não encontrado' });
+  }
+
+  return res.json(usuarioAtualizado);
+}
+
+async function deletar(req, res) {
+  const { id } = req.params;
+  const deletado = await usuarioModel.deletarUsuario(id);
+
+  if (!deletado) {
+    return res.status(404).json({ erro: 'Usuário não encontrado' });
+  }
+
+  return res.json({ mensagem: 'Usuário removido com sucesso', id });
+}
+
+module.exports = { listar, buscarPorId, criar, atualizar, deletar };
