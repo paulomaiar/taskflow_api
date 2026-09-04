@@ -4,6 +4,7 @@ const cors = require('cors');
 const tarefaRoutes = require('./routes/tarefas.routes');
 const usuarioRoutes = require('./routes/usuarios.routes');
 const estatisticaRoutes = require('./routes/estatisticas.routes');
+const projetosRoutes = require('./routes/projetos.routes');
 
 const app = express();
 const PORTA = process.env.PORT || 3000;
@@ -18,6 +19,7 @@ app.get('/', (req, res) => {
 app.use('/tarefas', tarefaRoutes);
 app.use('/usuarios', usuarioRoutes);
 app.use('/estatisticas', estatisticaRoutes);
+app.use('/projetos', projetosRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
