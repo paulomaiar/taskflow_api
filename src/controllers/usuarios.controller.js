@@ -1,4 +1,5 @@
 const usuarioModel = require('../models/usuario.model');
+const tarefaModel = require('../models/tarefa.model');
 
 async function listar(req, res) {
   const usuarios = await usuarioModel.listarUsuarios();
@@ -44,6 +45,19 @@ async function atualizar(req, res) {
 
 async function deletar(req, res) {
   const { id } = req.params;
+  const usuarioId = Number(id);
+
+  const tarefas = await tarefaModel.listarTarefas();
+  const tarefasDoUsuario = tarefas.filter(
+    tarefa => tarefa.usuarioId === usuarioId
+  );
+
+  if (tarefasDoUsuario.length > 0) {
+    return res.status(400).json({
+      erro: 'Usuário possui tarefas. Remova as tarefas antes de deletar o usuário.',
+    });
+  }
+
   const deletado = await usuarioModel.deletarUsuario(id);
 
   if (!deletado) {
