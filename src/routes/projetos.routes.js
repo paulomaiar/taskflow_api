@@ -7,6 +7,6 @@ router.get('/', projetosController.listar);
 router.post('/', projetosController.criar);
 router.get('/:id', projetosController.buscarPorId);
 router.put('/:id', projetosController.atualizar);
-router.delete('/:id', projetosController.remover);
+router.delete('/:id', projetosController.deletar);
 
 module.exports = router;

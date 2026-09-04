@@ -1,4 +1,4 @@
-const usuarioModel = require('../models/usuarios.models');
+const usuarioModel = require('../models/usuario.model');
 
 async function listar(req, res) {
   const usuarios = await usuarioModel.listarUsuarios();

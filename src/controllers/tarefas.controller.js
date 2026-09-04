@@ -1,4 +1,4 @@
-const tarefaModel = require('../models/tarefas.models');
+const tarefaModel = require('../models/tarefa.model');
 
 async function listar(req, res) {
   let tarefas = await tarefaModel.listarTarefas();

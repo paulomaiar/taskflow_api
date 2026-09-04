@@ -1,64 +1,49 @@
-let projetos = [];
-let proximoId = 1;
+const projetoModel = require('../models/projeto.model');
 
-const projetosController = {
-  listar(req, res) {
-    return res.json(projetos);
-  },
+async function listar(req, res) {
+  const projetos = await projetoModel.listarProjetos();
+  return res.json(projetos);
+}
 
-  buscarPorId(req, res) {
-    const projeto = projetos.find(p => p.id === Number(req.params.id));
+async function buscarPorId(req, res) {
+  const projeto = await projetoModel.buscarProjetoPorId(req.params.id);
 
-    if (!projeto) {
-      return res.status(404).json({ erro: 'Projeto não encontrado' });
-    }
+  if (!projeto) {
+    return res.status(404).json({ erro: 'Projeto não encontrado' });
+  }
 
-    return res.json(projeto);
-  },
+  return res.json(projeto);
+}
 
-  criar(req, res) {
-    const { nome, descricao } = req.body;
+async function criar(req, res) {
+  const { nome } = req.body;
 
-    if (!nome) {
-      return res.status(400).json({ erro: 'Nome é obrigatório' });
-    }
+  if (!nome) {
+    return res.status(400).json({ erro: 'Nome é obrigatório' });
+  }
 
-    const novoProjeto = {
-      id: proximoId++,
-      nome,
-      descricao: descricao || null,
-    };
+  const novoProjeto = await projetoModel.adicionarProjeto(req.body);
+  return res.status(201).json(novoProjeto);
+}
 
-    projetos.push(novoProjeto);
-    return res.status(201).json(novoProjeto);
-  },
+async function atualizar(req, res) {
+  const projetoAtualizado = await projetoModel.atualizarProjeto(req.params.id, req.body);
 
-  atualizar(req, res) {
-    const indice = projetos.findIndex(p => p.id === Number(req.params.id));
+  if (!projetoAtualizado) {
+    return res.status(404).json({ erro: 'Projeto não encontrado' });
+  }
 
-    if (indice === -1) {
-      return res.status(404).json({ erro: 'Projeto não encontrado' });
-    }
+  return res.json(projetoAtualizado);
+}
 
-    projetos[indice] = {
-      ...projetos[indice],
-      ...req.body,
-      id: projetos[indice].id,
-    };
+async function deletar(req, res) {
+  const deletado = await projetoModel.deletarProjeto(req.params.id);
 
-    return res.json(projetos[indice]);
-  },
+  if (!deletado) {
+    return res.status(404).json({ erro: 'Projeto não encontrado' });
+  }
 
-  remover(req, res) {
-    const indice = projetos.findIndex(p => p.id === Number(req.params.id));
+  return res.json({ mensagem: 'Projeto removido com sucesso', id: req.params.id });
+}
 
-    if (indice === -1) {
-      return res.status(404).json({ erro: 'Projeto não encontrado' });
-    }
-
-    const [projetoRemovido] = projetos.splice(indice, 1);
-    return res.json({ mensagem: 'Projeto removido com sucesso', projeto: projetoRemovido });
-  },
-};
-
-module.exports = projetosController;
+module.exports = { listar, buscarPorId, criar, atualizar, deletar };
