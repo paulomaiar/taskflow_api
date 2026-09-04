@@ -31,7 +31,8 @@ async function adicionarTarefa(dados) {
     coluna: dados.coluna || 'A FAZER',
     cidade: dados.cidade || '',
     concluida: dados.concluida || false,
-    usuarioId: dados.usuarioId || null
+    usuarioId: dados.usuarioId || null,
+    concluidaEm: dados.concluidaEm || null
   };
 
   tarefas.push(novaTarefa);

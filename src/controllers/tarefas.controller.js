@@ -6,7 +6,11 @@ const colunasValidas = ['afazer', 'andamento', 'concluido'];
 
 async function listar(req, res) {
   let tarefas = await tarefaModel.listarTarefas();
-  const { coluna, prioridade } = req.query;
+  const { coluna, prioridade, usuarioId } = req.query;
+
+  if (usuarioId !== undefined) {
+    tarefas = tarefas.filter(t => t.usuarioId === Number(usuarioId));
+  }
 
   if (coluna) {
     tarefas = tarefas.filter(t => t.coluna.toLowerCase() === coluna.toLowerCase());
@@ -60,6 +64,16 @@ async function criar(req, res) {
     });
   }
 
+  if (coluna === 'andamento' && usuarioId !== undefined && usuarioId !== null) {
+    const quantidade = await contarTarefasEmAndamento(usuarioId);
+
+    if (quantidade >= 2) {
+      return res.status(400).json({
+        erro: 'Limite de 2 tarefas em andamento por usuário atingido'
+      });
+    }
+  }
+
   const novaTarefa = await tarefaModel.adicionarTarefa(req.body);
   return res.status(201).json(novaTarefa);
 }
@@ -67,6 +81,8 @@ async function criar(req, res) {
 async function atualizar(req, res) {
   const { id } = req.params;
   const { prioridade, coluna } = req.body;
+  const dadosAtualizados = { ...req.body };
+  delete dadosAtualizados.concluidaEm;
   
 
   if (prioridade !== undefined && !prioridadesValidas.includes(prioridade)) {
@@ -81,12 +97,55 @@ async function atualizar(req, res) {
     });
   }
 
-  const tarefaAtualizada = await tarefaModel.atualizarTarefa(id, req.body);
+  const tarefaAtual = await tarefaModel.buscarTarefaPorId(id);
+  if (!tarefaAtual) {
+    return res.status(404).json({ erro: 'Tarefa não encontrada' });
+  }
+  const colunaFinal = coluna || tarefaAtual.coluna;
+
+  const usuarioIdFinal =
+    req.body.usuarioId !== undefined
+      ? req.body.usuarioId
+      : tarefaAtual.usuarioId;
+
+
+
+  if (
+    String(colunaFinal).toLowerCase() === 'andamento' &&
+    usuarioIdFinal !== undefined &&
+    usuarioIdFinal !== null
+  ) {
+    const quantidade = await contarTarefasEmAndamento(usuarioIdFinal, id);
+
+    if (quantidade >= 2) {
+      return res.status(400).json({
+        erro: 'Limite de 2 tarefas em andamento por usuário atingido'
+      });
+    }
+
+  }
+
+  if (
+    coluna !== undefined &&
+    String(tarefaAtual.coluna).toLowerCase() === 'concluido' &&
+    String(colunaFinal).toLowerCase() !== 'concluido'
+  ) {
+    dadosAtualizados.concluidaEm = null;
+  }
+
+  if (
+    coluna !== undefined &&
+    String(tarefaAtual.coluna).toLowerCase() !== 'concluido' &&
+    String(colunaFinal).toLowerCase() === 'concluido'
+  ) {
+    dadosAtualizados.concluidaEm = new Date().toISOString();
+  }
+
+  const tarefaAtualizada = await tarefaModel.atualizarTarefa(id, dadosAtualizados);
 
   if (!tarefaAtualizada) {
     return res.status(404).json({ erro: 'Tarefa não encontrada' });
   }
-
 
 
   return res.json(tarefaAtualizada);
@@ -101,6 +160,16 @@ async function deletar(req, res) {
   }
 
   return res.json({ mensagem: 'Tarefa removida com sucesso', id });
+}
+
+async function contarTarefasEmAndamento(usuarioId, idIgnorado = null) {
+  const tarefas = await tarefaModel.listarTarefas();
+
+  return tarefas.filter(tarefa =>
+    tarefa.usuarioId === usuarioId &&
+    String(tarefa.coluna).toLowerCase() === 'andamento' &&
+    String(tarefa.id) !== String(idIgnorado)
+  ).length;
 }
 
 module.exports = { listar, buscarPorId, criar, atualizar, deletar };
