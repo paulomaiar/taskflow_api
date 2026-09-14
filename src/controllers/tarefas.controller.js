@@ -1,5 +1,5 @@
-const tarefaModel = require('../models/tarefa.model');
-const usuarioModel = require('../models/usuario.model');
+const tarefaModel = require('../models/tarefas.models');
+const usuarioModel = require('../models/usuarios.models');
 
 const prioridadesValidas = ['alta', 'media', 'baixa'];
 const colunasValidas = ['afazer', 'andamento', 'concluido'];
@@ -9,7 +9,7 @@ async function listar(req, res) {
   const { coluna, prioridade, usuarioId } = req.query;
 
   if (usuarioId !== undefined) {
-    tarefas = tarefas.filter(t => t.usuarioId === Number(usuarioId));
+    tarefas = tarefas.filter(t => String(t.usuarioId) === String(usuarioId));
   }
 
   if (coluna) {
@@ -35,14 +35,17 @@ async function buscarPorId(req, res) {
 }
 
 async function criar(req, res) {
-  const { texto, usuarioId, prioridade, coluna} = req.body;
+  const { texto, prioridade, coluna } = req.body;
+  const usuarioId = req.usuario?.id;
 
-  if (usuarioId !== undefined && usuarioId !== null) {
-    const usuario = await usuarioModel.buscarUsuarioPorId(usuarioId);
+  if (!usuarioId) {
+    return res.status(401).json({ erro: 'Usuário não autenticado' });
+  }
 
-    if (!usuario) {
-      return res.status(400).json({ erro: 'Usuário não encontrado' });
-    }
+  const usuario = await usuarioModel.buscarUsuarioPorId(usuarioId);
+
+  if (!usuario) {
+    return res.status(400).json({ erro: 'Usuário não encontrado' });
   }
 
   if (!texto) {
@@ -65,7 +68,7 @@ async function criar(req, res) {
   }
 
   if (coluna === 'andamento' && usuarioId !== undefined && usuarioId !== null) {
-    const quantidade = await contarTarefasEmAndamento(usuarioId);
+    const quantidade = await tarefaModel.contarTarefasEmAndamento(usuarioId);
 
     if (quantidade >= 2) {
       return res.status(400).json({
@@ -74,7 +77,12 @@ async function criar(req, res) {
     }
   }
 
-  const novaTarefa = await tarefaModel.adicionarTarefa(req.body);
+  const dadosParaSalvar = {
+    ...req.body,
+    usuarioId,
+  };
+
+  const novaTarefa = await tarefaModel.adicionarTarefa(dadosParaSalvar);
   return res.status(201).json(novaTarefa);
 }
 
@@ -82,13 +90,19 @@ async function atualizar(req, res) {
   const { id } = req.params;
   const { prioridade, coluna } = req.body;
   const dadosAtualizados = { ...req.body };
+  const usuarioId = req.usuario?.id;
+
   delete dadosAtualizados.concluidaEm;
-  
+  delete dadosAtualizados.usuarioId;
+
+  if (!usuarioId) {
+    return res.status(401).json({ erro: 'Usuário não autenticado' });
+  }
 
   if (prioridade !== undefined && !prioridadesValidas.includes(prioridade)) {
-  return res.status(400).json({
-    erro: 'Prioridade inválida. Use: alta, media ou baixa',
-  });
+    return res.status(400).json({
+      erro: 'Prioridade inválida. Use: alta, media ou baixa',
+    });
   }
 
   if (coluna !== undefined && !colunasValidas.includes(coluna)) {
@@ -101,28 +115,22 @@ async function atualizar(req, res) {
   if (!tarefaAtual) {
     return res.status(404).json({ erro: 'Tarefa não encontrada' });
   }
+
   const colunaFinal = coluna || tarefaAtual.coluna;
-
-  const usuarioIdFinal =
-    req.body.usuarioId !== undefined
-      ? req.body.usuarioId
-      : tarefaAtual.usuarioId;
-
-
+  const usuarioIdFinal = usuarioId;
 
   if (
     String(colunaFinal).toLowerCase() === 'andamento' &&
     usuarioIdFinal !== undefined &&
     usuarioIdFinal !== null
   ) {
-    const quantidade = await contarTarefasEmAndamento(usuarioIdFinal, id);
+    const quantidade = await tarefaModel.contarTarefasEmAndamento(usuarioIdFinal, id);
 
     if (quantidade >= 2) {
       return res.status(400).json({
         erro: 'Limite de 2 tarefas em andamento por usuário atingido'
       });
     }
-
   }
 
   if (
@@ -141,12 +149,13 @@ async function atualizar(req, res) {
     dadosAtualizados.concluidaEm = new Date().toISOString();
   }
 
+  dadosAtualizados.usuarioId = usuarioId;
+
   const tarefaAtualizada = await tarefaModel.atualizarTarefa(id, dadosAtualizados);
 
   if (!tarefaAtualizada) {
     return res.status(404).json({ erro: 'Tarefa não encontrada' });
   }
-
 
   return res.json(tarefaAtualizada);
 }
@@ -160,16 +169,6 @@ async function deletar(req, res) {
   }
 
   return res.json({ mensagem: 'Tarefa removida com sucesso', id });
-}
-
-async function contarTarefasEmAndamento(usuarioId, idIgnorado = null) {
-  const tarefas = await tarefaModel.listarTarefas();
-
-  return tarefas.filter(tarefa =>
-    tarefa.usuarioId === usuarioId &&
-    String(tarefa.coluna).toLowerCase() === 'andamento' &&
-    String(tarefa.id) !== String(idIgnorado)
-  ).length;
 }
 
 module.exports = { listar, buscarPorId, criar, atualizar, deletar };

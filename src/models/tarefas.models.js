@@ -22,6 +22,21 @@ async function buscarTarefaPorId(id) {
   return tarefas.find(t => String(t.id) === String(id));
 }
 
+async function buscarPorUsuarioId(usuarioId) {
+  const tarefas = await listarTarefas();
+  return tarefas.filter(t => String(t.usuarioId) === String(usuarioId));
+}
+
+async function contarTarefasEmAndamento(usuarioId, idIgnorado = null) {
+  const tarefas = await listarTarefas();
+
+  return tarefas.filter(tarefa =>
+    String(tarefa.usuarioId) === String(usuarioId) &&
+    String(tarefa.coluna).toLowerCase() === 'andamento' &&
+    String(tarefa.id) !== String(idIgnorado)
+  ).length;
+}
+
 async function adicionarTarefa(dados) {
   const tarefas = await listarTarefas();
   const novaTarefa = {
@@ -69,6 +84,8 @@ async function deletarTarefa(id) {
 module.exports = {
   listarTarefas,
   buscarTarefaPorId,
+  buscarPorUsuarioId,
+  contarTarefasEmAndamento,
   adicionarTarefa,
   atualizarTarefa,
   deletarTarefa

@@ -1,5 +1,5 @@
-const usuarioModel = require('../models/usuario.model');
-const tarefaModel = require('../models/tarefa.model');
+const usuarioModel = require('../models/usuarios.models');
+const tarefaModel = require('../models/tarefas.models');
 
 async function listar(req, res) {
   const usuarios = await usuarioModel.listarUsuarios();
@@ -45,12 +45,7 @@ async function atualizar(req, res) {
 
 async function deletar(req, res) {
   const { id } = req.params;
-  const usuarioId = Number(id);
-
-  const tarefas = await tarefaModel.listarTarefas();
-  const tarefasDoUsuario = tarefas.filter(
-    tarefa => tarefa.usuarioId === usuarioId
-  );
+  const tarefasDoUsuario = await tarefaModel.buscarPorUsuarioId(id);
 
   if (tarefasDoUsuario.length > 0) {
     return res.status(400).json({
