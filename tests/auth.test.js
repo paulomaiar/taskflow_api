@@ -16,7 +16,7 @@ test('POST /tarefas sem token retorna 401', async () => {
 test('POST /auth/login retorna token e cria tarefa vinculada ao usuário autenticado', async () => {
   const login = await request(app)
     .post('/auth/login')
-    .send({ usuario: 'joao.silva@email.com', senha: '123456' });
+    .send({ usuario: 'paulo.admin@email.com', senha: '123456' });
 
   assert.equal(login.status, 200);
   assert.ok(login.body.token);

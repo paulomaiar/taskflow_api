@@ -1,12 +1,8 @@
 [
   {
     "id": 1,
-    "nome": "João Silva",
-    "email": "joao.silva@email.com"
-  },
-  {
-    "id": 2,
-    "nome": "Maria Santos",
-    "email": "maria.santos@email.com"
+    "nome": "Paulo admin",
+    "email": "paulo.admin@email.com",
+    "senha": "123456"
   }
 ]
