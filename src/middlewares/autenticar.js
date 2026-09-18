@@ -16,7 +16,7 @@ function autenticar(req, res, next) {
   }
 
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET || 'taskflow-secret-development');
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
     req.usuario = payload;
     return next();
   } catch (erro) {

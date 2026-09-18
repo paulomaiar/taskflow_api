@@ -1,5 +1,11 @@
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
+
+if (!process.env.JWT_SECRET) {
+  process.env.JWT_SECRET = 'taskflow-secret-development';
+}
 
 const logger = require('./middlewares/logger');
 const validarContentType = require('./middlewares/validarContentType');
@@ -12,7 +18,20 @@ const authRoutes = require('./routes/authRoutes');
 
 const app = express();
 
-app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173' }));
+const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173,http://127.0.0.1:5173').split(',').map((origin) => origin.trim()).filter(Boolean);
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error('Origem não permitida pelo CORS'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Authorization', 'Content-Type'],
+  credentials: true,
+}));
 app.use(express.json());
 app.use(logger);
 app.use(validarContentType);

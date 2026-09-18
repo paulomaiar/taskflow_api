@@ -1,8 +1,12 @@
 require('dotenv').config();
 
-const app = require('./app');
-const PORTA = process.env.PORTA || 3001;
+if (!process.env.JWT_SECRET) {
+  process.env.JWT_SECRET = 'taskflow-secret-development';
+}
 
-app.listen(PORTA, () => {
-  console.log(`Servidor MVC rodando na porta ${PORTA}`);
+const app = require('./app');
+const PORT = process.env.PORT || 3001;
+
+app.listen(PORT, () => {
+  console.log(`Servidor MVC rodando na porta ${PORT}`);
 });

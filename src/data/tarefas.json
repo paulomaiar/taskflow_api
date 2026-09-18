@@ -18,5 +18,15 @@
     "concluida": false,
     "usuarioId": 1,
     "concluidaEm": null
+  },
+  {
+    "id": 3973,
+    "texto": "Tarefa autenticada",
+    "prioridade": "media",
+    "coluna": "A FAZER",
+    "cidade": "",
+    "concluida": false,
+    "usuarioId": 1,
+    "concluidaEm": null
   }
 ]

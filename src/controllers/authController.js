@@ -22,11 +22,11 @@ async function login(req, res) {
         nome: usuarioEncontrado.nome,
         email: usuarioEncontrado.email,
       },
-      process.env.JWT_SECRET || 'taskflow-secret-development',
+      process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
 
-    const { senha: senhaRemovida, ...usuarioSemSenha } = usuarioEncontrado;
+    const { senha: _senhaRemovida, ...usuarioSemSenha } = usuarioEncontrado;
 
     return res.status(200).json({
       mensagem: 'Login realizado com sucesso',
