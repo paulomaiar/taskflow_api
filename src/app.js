@@ -18,19 +18,23 @@ const authRoutes = require('./routes/authRoutes');
 
 const app = express();
 
-const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173,http://127.0.0.1:5173').split(',').map((origin) => origin.trim()).filter(Boolean);
+const allowedOrigins = [
+  process.env.CORS_ORIGIN,
+  'http://localhost:5173',
+  'http://127.0.0.1:5173'
+].filter(Boolean);
 
 app.use(cors({
-  origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      return callback(null, true);
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin) || process.env.CORS_ORIGIN === '*') {
+      callback(null, true);
+    } else {
+      callback(new Error('Bloqueado pelo CORS'));
     }
-
-    return callback(new Error('Origem não permitida pelo CORS'));
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Authorization', 'Content-Type'],
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
 app.use(logger);
