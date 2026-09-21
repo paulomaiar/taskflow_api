@@ -50,7 +50,6 @@ app.use('/tarefas', tarefaRoutes);
 app.use('/usuarios', usuarioRoutes);
 app.use('/estatisticas', estatisticaRoutes);
 app.use('/projetos', projetosRoutes);
-
 app.use((req, res) => {
   res.status(404).json({
     erro: 'Rota não encontrada',

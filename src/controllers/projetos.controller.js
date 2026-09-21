@@ -36,7 +36,7 @@ async function atualizar(req, res) {
   return res.json(projetoAtualizado);
 }
 
-async function deletar(req, res) {
+async function remover(req, res) {
   const deletado = await projetoModel.deletarProjeto(req.params.id);
 
   if (!deletado) {
@@ -46,4 +46,4 @@ async function deletar(req, res) {
   return res.json({ mensagem: 'Projeto removido com sucesso', id: req.params.id });
 }
 
-module.exports = { listar, buscarPorId, criar, atualizar, deletar };
+module.exports = { listar, buscarPorId, criar, atualizar, remover };
