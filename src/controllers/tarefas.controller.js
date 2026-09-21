@@ -4,6 +4,27 @@ const usuarioModel = require('../models/usuarios.models');
 const prioridadesValidas = ['alta', 'media', 'baixa'];
 const colunasValidas = ['afazer', 'andamento', 'concluido'];
 
+function normalizarColuna(coluna) {
+  if (coluna === undefined || coluna === null || coluna === '') return coluna;
+
+  const valor = String(coluna)
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  const mapeamento = {
+    'a fazer': 'afazer',
+    afazer: 'afazer',
+    'em andamento': 'andamento',
+    andamento: 'andamento',
+    concluida: 'concluido',
+    concluido: 'concluido',
+  };
+
+  return mapeamento[valor] || valor;
+}
+
 async function listar(req, res) {
   let tarefas = await tarefaModel.listarTarefas();
   const { coluna, prioridade, usuarioId } = req.query;
@@ -36,6 +57,7 @@ async function buscarPorId(req, res) {
 
 async function criar(req, res) {
   const { texto, prioridade, coluna } = req.body;
+  const colunaNormalizada = normalizarColuna(coluna);
   const usuarioId = req.usuario?.id;
 
   if (!usuarioId) {
@@ -61,13 +83,13 @@ async function criar(req, res) {
     });
   }
 
-  if (coluna !== undefined && !colunasValidas.includes(coluna)) {
+  if (colunaNormalizada !== undefined && !colunasValidas.includes(colunaNormalizada)) {
     return res.status(400).json({
       erro: 'Coluna inválida. Use: afazer, andamento ou concluido'
     });
   }
 
-  if (coluna === 'andamento' && usuarioId !== undefined && usuarioId !== null) {
+  if (colunaNormalizada === 'andamento') {
     const quantidade = await tarefaModel.contarTarefasEmAndamento(usuarioId);
 
     if (quantidade >= 2) {
@@ -79,6 +101,7 @@ async function criar(req, res) {
 
   const dadosParaSalvar = {
     ...req.body,
+    coluna: colunaNormalizada,
     usuarioId,
   };
 
@@ -89,6 +112,7 @@ async function criar(req, res) {
 async function atualizar(req, res) {
   const { id } = req.params;
   const { prioridade, coluna } = req.body;
+  const colunaNormalizada = normalizarColuna(coluna);
   const dadosAtualizados = { ...req.body };
   const usuarioId = req.usuario?.id;
 
@@ -105,7 +129,7 @@ async function atualizar(req, res) {
     });
   }
 
-  if (coluna !== undefined && !colunasValidas.includes(coluna)) {
+  if (colunaNormalizada !== undefined && !colunasValidas.includes(colunaNormalizada)) {
     return res.status(400).json({
       erro: 'Coluna inválida. Use: afazer, andamento ou concluido',
     });
@@ -116,7 +140,7 @@ async function atualizar(req, res) {
     return res.status(404).json({ erro: 'Tarefa não encontrada' });
   }
 
-  const colunaFinal = coluna || tarefaAtual.coluna;
+  const colunaFinal = colunaNormalizada || tarefaAtual.coluna;
   const usuarioIdFinal = usuarioId;
 
   if (
@@ -131,6 +155,10 @@ async function atualizar(req, res) {
         erro: 'Limite de 2 tarefas em andamento por usuário atingido'
       });
     }
+  }
+
+  if (colunaNormalizada !== undefined) {
+    dadosAtualizados.coluna = colunaNormalizada;
   }
 
   if (

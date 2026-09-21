@@ -32,7 +32,7 @@ async function contarTarefasEmAndamento(usuarioId, idIgnorado = null) {
 
   return tarefas.filter(tarefa =>
     String(tarefa.usuarioId) === String(usuarioId) &&
-    String(tarefa.coluna).toLowerCase() === 'andamento' &&
+    ['andamento', 'em andamento'].includes(String(tarefa.coluna).trim().toLowerCase()) &&
     String(tarefa.id) !== String(idIgnorado)
   ).length;
 }
