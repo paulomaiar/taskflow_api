@@ -39,9 +39,11 @@ test('POST /auth/login retorna token e cria tarefa vinculada ao usuário autenti
 });
 
 test('usuário não pode ter mais de duas tarefas em andamento', async () => {
+  fs.writeFileSync(tarefasPath, '[]');
+
   const login = await request(app)
     .post('/auth/login')
-    .send({ usuario: 'user@email.com', senha: '123' });
+    .send({ usuario: 'paulo.admin@email.com', senha: '123456' });
   const token = login.body.token;
 
   const primeira = await request(app)
