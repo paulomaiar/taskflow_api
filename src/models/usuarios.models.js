@@ -22,10 +22,15 @@ async function buscarUsuarioPorId(id) {
   return usuarios.find(u => String(u.id) === String(id));
 }
 
+async function buscarUsuarioPorEmail(email) {
+  const usuarios = await listarUsuarios();
+  return usuarios.find(u => u.email === email);
+}
+
 async function adicionarUsuario(dados) {
   const usuarios = await listarUsuarios();
+  
   const emailExiste = usuarios.some(u => u.email === dados.email);
-
   if (emailExiste) {
     throw new Error('Email já cadastrado');
   }
@@ -33,12 +38,16 @@ async function adicionarUsuario(dados) {
   const novoUsuario = {
     id: crypto.randomInt(1000, 10000),
     nome: dados.nome,
-    email: dados.email
+    email: dados.email,
+    senha: dados.senha
   };
 
   usuarios.push(novoUsuario);
   await salvarArquivo(usuarios);
-  return novoUsuario;
+
+  // Retorna o usuário criado sem expor a senha no retorno
+  const { senha, ...usuarioSemSenha } = novoUsuario;
+  return usuarioSemSenha;
 }
 
 async function atualizarUsuario(id, dadosNovos) {
@@ -70,6 +79,7 @@ async function deletarUsuario(id) {
 module.exports = {
   listarUsuarios,
   buscarUsuarioPorId,
+  buscarUsuarioPorEmail,
   adicionarUsuario,
   atualizarUsuario,
   deletarUsuario

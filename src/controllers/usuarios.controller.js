@@ -3,7 +3,8 @@ const tarefaModel = require('../models/tarefas.models');
 
 async function listar(req, res) {
   const usuarios = await usuarioModel.listarUsuarios();
-  return res.json(usuarios);
+  const usuariosFormatados = usuarios.map(({ senha, ...u }) => u);
+  return res.json(usuariosFormatados);
 }
 
 async function buscarPorId(req, res) {
@@ -14,14 +15,15 @@ async function buscarPorId(req, res) {
     return res.status(404).json({ erro: 'Usuário não encontrado' });
   }
 
-  return res.json(usuario);
+  const { senha, ...usuarioSemSenha } = usuario;
+  return res.json(usuarioSemSenha);
 }
 
 async function criar(req, res) {
-  const { nome, email } = req.body;
+  const { nome, email, senha } = req.body;
 
-  if (!nome || !email) {
-    return res.status(400).json({ erro: 'Faltando campo nome ou email' });
+  if (!nome || !email || !senha) {
+    return res.status(400).json({ erro: 'Preencha todos os campos: nome, email e senha' });
   }
 
   try {
@@ -40,7 +42,8 @@ async function atualizar(req, res) {
     return res.status(404).json({ erro: 'Usuário não encontrado' });
   }
 
-  return res.json(usuarioAtualizado);
+  const { senha, ...usuarioSemSenha } = usuarioAtualizado;
+  return res.json(usuarioSemSenha);
 }
 
 async function deletar(req, res) {

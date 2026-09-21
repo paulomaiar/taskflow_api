@@ -1,41 +1,38 @@
 const jwt = require('jsonwebtoken');
-
-const usuarioModel = require('../models/usuarioModel');
+const usuarioModel = require('../models/usuarios.models');
 
 async function login(req, res) {
-  const { usuario, senha } = req.body || {};
+  const { email, usuario, senha } = req.body;
 
-  if (!usuario || !senha) {
-    return res.status(400).json({ erro: 'Usuário e senha são obrigatórios' });
+  // Aceita 'email' ou 'usuario' para fazer a busca
+  const identificador = email || usuario;
+
+  if (!identificador || !senha) {
+    return res.status(400).json({ erro: 'E-mail e senha são obrigatórios' });
   }
 
-  try {
-    const usuarioEncontrado = await usuarioModel.buscarPorEmailOuNome(usuario);
+  const usuarios = await usuarioModel.listarUsuarios();
+  const usuarioEncontrado = usuarios.find(
+    u => (u.email === identificador || u.usuario === identificador) && u.senha === senha
+  );
 
-    if (!usuarioEncontrado || usuarioEncontrado.senha !== senha) {
-      return res.status(401).json({ erro: 'Credenciais inválidas' });
-    }
-
-    const token = jwt.sign(
-      {
-        id: usuarioEncontrado.id,
-        nome: usuarioEncontrado.nome,
-        email: usuarioEncontrado.email,
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: '8h' }
-    );
-
-    const { senha: _senhaRemovida, ...usuarioSemSenha } = usuarioEncontrado;
-
-    return res.status(200).json({
-      mensagem: 'Login realizado com sucesso',
-      token,
-      usuario: usuarioSemSenha,
-    });
-  } catch (erro) {
-    return res.status(500).json({ erro: 'Erro interno ao realizar login' });
+  if (!usuarioEncontrado) {
+    return res.status(401).json({ erro: 'E-mail ou senha inválidos' });
   }
+
+  const secret = process.env.JWT_SECRET || 'fallback_secret';
+  const token = jwt.sign(
+    { id: usuarioEncontrado.id, email: usuarioEncontrado.email },
+    secret,
+    { expiresIn: '1d' }
+  );
+
+  const { senha: _, ...usuarioSemSenha } = usuarioEncontrado;
+
+  return res.json({
+    token,
+    usuario: usuarioSemSenha
+  });
 }
 
 module.exports = { login };

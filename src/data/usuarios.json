@@ -4,5 +4,17 @@
     "nome": "Paulo admin",
     "email": "paulo.admin@email.com",
     "senha": "123456"
+  },
+  {
+    "id": 6218,
+    "nome": "user",
+    "email": "user@email.com",
+    "senha": "123"
+  },
+  {
+    "id": 4013,
+    "nome": "admin",
+    "email": "admin@email.com",
+    "senha": "123456"
   }
 ]
