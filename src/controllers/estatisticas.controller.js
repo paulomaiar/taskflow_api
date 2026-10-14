@@ -15,7 +15,7 @@ function obterMaisFrequente(objetoContagem) {
 }
 
 async function obterGeral(req, res) {
-  let tarefas = await tarefaModel.listarTarefas();
+  let tarefas = await tarefaModel.listarTarefas(req.usuario.id);
   const { coluna } = req.query;
 
   if (coluna) {
@@ -30,26 +30,17 @@ async function obterGeral(req, res) {
     concluido: tarefas.filter(t => ['concluido', 'concluída'].includes(t.coluna.toLowerCase())).length
   };
 
-  const porPrioridade = {
-    alta: tarefas.filter(t => t.prioridade.toLowerCase() === 'alta').length,
-    media: tarefas.filter(t => t.prioridade.toLowerCase() === 'media').length,
-    baixa: tarefas.filter(t => t.prioridade.toLowerCase() === 'baixa').length
-  };
-
   const colunaComMaisTarefas = obterMaisFrequente(porColuna);
-  const prioridadeMaisComum = obterMaisFrequente(porPrioridade);
 
   return res.json({
     totalGeral,
     porColuna,
-    porPrioridade,
-    colunaComMaisTarefas,
-    prioridadeMaisComum
+    colunaComMaisTarefas
   });
 }
 
 async function obterResumo(req, res) {
-  const tarefas = await tarefaModel.listarTarefas();
+  const tarefas = await tarefaModel.listarTarefas(req.usuario.id);
   const total = tarefas.length;
 
   if (total === 0) {
@@ -60,15 +51,7 @@ async function obterResumo(req, res) {
   const andamento = tarefas.filter(t => ['andamento', 'em andamento'].includes(t.coluna.toLowerCase())).length;
   const concluido = tarefas.filter(t => ['concluido', 'concluída'].includes(t.coluna.toLowerCase())).length;
 
-  const porPrioridade = {
-    alta: tarefas.filter(t => t.prioridade.toLowerCase() === 'alta').length,
-    media: tarefas.filter(t => t.prioridade.toLowerCase() === 'media').length,
-    baixa: tarefas.filter(t => t.prioridade.toLowerCase() === 'baixa').length
-  };
-
-  const prioridadeMaisComum = obterMaisFrequente(porPrioridade);
-
-  const resumo = `Você tem ${total} tarefas. ${concluido} concluída(s), ${andamento} em andamento e ${afazer} a fazer. Prioridade mais comum: ${prioridadeMaisComum}.`;
+  const resumo = `Você tem ${total} tarefas. ${concluido} concluída(s), ${andamento} em andamento e ${afazer} a fazer.`;
 
   return res.json({ resumo });
 }

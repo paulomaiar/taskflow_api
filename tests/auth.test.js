@@ -1,79 +1,145 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
 const request = require('supertest');
-
+const pool = require('../src/database/db');
 const app = require('../src/app');
-const tarefasPath = require('node:path').join(__dirname, '../src/data/tarefas.json');
-const tarefasOriginais = fs.readFileSync(tarefasPath, 'utf8');
+const usuarioModel = require('../src/models/usuarios.models');
+const projetoModel = require('../src/models/projeto.model');
+const tarefaModel = require('../src/models/tarefas.models');
 
-test.after(() => {
-  fs.writeFileSync(tarefasPath, tarefasOriginais);
+test('rotas com dados de usuário exigem autenticação', async () => {
+  for (const path of ['/tarefas', '/projetos', '/estatisticas']) {
+    const resposta = await request(app).get(path);
+    assert.equal(resposta.status, 401, path);
+  }
 });
 
-test('POST /tarefas sem token retorna 401', async () => {
-  const resposta = await request(app)
-    .post('/tarefas')
-    .send({ texto: 'Tarefa sem autenticação' });
+test('cadastro e login persistem usuários no PostgreSQL com senha protegida', async t => {
+  const queryOriginal = pool.query;
+  let usuarioCriado;
+  let hashAtualizado;
 
-  assert.equal(resposta.status, 401);
-  assert.deepEqual(resposta.body, { erro: 'Token não informado' });
-});
+  t.after(() => {
+    pool.query = queryOriginal;
+  });
 
-test('POST /auth/login retorna token e cria tarefa vinculada ao usuário autenticado', async () => {
+  pool.query = async (sql, valores = []) => {
+    if (sql.includes('INSERT INTO usuarios')) {
+      usuarioCriado = {
+        id: 27,
+        nome: valores[0],
+        email: valores[1],
+        criadoEm: null,
+        atualizadoEm: null,
+      };
+      assert.notEqual(valores[2], 'senha-de-teste');
+      assert.match(valores[2], /^scrypt\$/);
+      return { rows: [usuarioCriado], rowCount: 1 };
+    }
+
+    if (sql.includes('SELECT id, nome, email, senha_hash')) {
+      return {
+        rows: [{
+          ...usuarioCriado,
+          senha_hash: hashAtualizado || 'senha-de-teste',
+        }],
+        rowCount: 1,
+      };
+    }
+
+    if (sql.includes('UPDATE usuarios SET senha_hash')) {
+      hashAtualizado = valores[0];
+      assert.match(hashAtualizado, /^scrypt\$/);
+      return { rows: [], rowCount: 1 };
+    }
+
+    throw new Error(`Consulta inesperada no teste: ${sql}`);
+  };
+
+  const criado = await usuarioModel.adicionarUsuario({
+    nome: 'Usuário de teste',
+    email: 'teste@example.invalid',
+    senha: 'senha-de-teste',
+  });
+  assert.equal(criado.id, 27);
+  assert.equal(Object.hasOwn(criado, 'senha_hash'), false);
+
   const login = await request(app)
     .post('/auth/login')
-    .send({ usuario: 'paulo.admin@email.com', senha: '123456' });
-
+    .send({ email: 'teste@example.invalid', senha: 'senha-de-teste' });
   assert.equal(login.status, 200);
   assert.ok(login.body.token);
-  assert.equal(login.body.usuario.id, 1);
-
-  const tarefa = await request(app)
-    .post('/tarefas')
-    .set('Authorization', `Bearer ${login.body.token}`)
-    .send({ texto: 'Tarefa autenticada' });
-
-  assert.equal(tarefa.status, 201);
-  assert.equal(tarefa.body.usuarioId, 1);
+  assert.deepEqual(login.body.usuario, {
+    id: 27,
+    nome: 'Usuário de teste',
+    email: 'teste@example.invalid',
+  });
+  assert.match(hashAtualizado, /^scrypt\$/);
 });
 
-test('usuário não pode ter mais de duas tarefas em andamento', async () => {
-  fs.writeFileSync(tarefasPath, '[]');
+test('projetos consultam e alteram somente registros do usuário autenticado', async t => {
+  const queryOriginal = pool.query;
+  const chamadas = [];
+  t.after(() => {
+    pool.query = queryOriginal;
+  });
 
-  const login = await request(app)
-    .post('/auth/login')
-    .send({ usuario: 'paulo.admin@email.com', senha: '123456' });
-  const token = login.body.token;
+  pool.query = async (sql, valores = []) => {
+    chamadas.push({ sql, valores });
+    return { rows: [{ id: 8, nome: 'Projeto', descricao: null }], rowCount: 1 };
+  };
 
-  const primeira = await request(app)
-    .post('/tarefas')
-    .set('Authorization', `Bearer ${token}`)
-    .send({ texto: 'Em andamento 1', coluna: 'andamento' });
-  const segunda = await request(app)
-    .post('/tarefas')
-    .set('Authorization', `Bearer ${token}`)
-    .send({ texto: 'Em andamento 2', coluna: 'Em andamento' });
-  const terceira = await request(app)
-    .post('/tarefas')
-    .set('Authorization', `Bearer ${token}`)
-    .send({ texto: 'Em andamento 3', coluna: 'andamento' });
+  await projetoModel.listarProjetos(27);
+  await projetoModel.buscarProjetoPorId(8, 27);
+  await projetoModel.adicionarProjeto({ nome: 'Projeto' }, 27);
+  await projetoModel.atualizarProjeto(8, { nome: 'Novo nome' }, 27);
+  await projetoModel.deletarProjeto(8, 27);
 
-  assert.equal(primeira.status, 201);
-  assert.equal(segunda.status, 201);
-  assert.equal(terceira.status, 400);
-  assert.equal(terceira.body.erro, 'Limite de 2 tarefas em andamento por usuário atingido');
+  assert.equal(chamadas.length, 5);
+  assert.deepEqual(chamadas[0].valores, [27]);
+  assert.match(chamadas[0].sql, /WHERE usuario_id = \$1/);
+  assert.deepEqual(chamadas[1].valores, [8, 27]);
+  assert.match(chamadas[1].sql, /id = \$1 AND usuario_id = \$2/);
+  assert.deepEqual(chamadas[2].valores, ['Projeto', null, 27]);
+  assert.deepEqual(chamadas[3].valores, ['Novo nome', 8, 27]);
+  assert.deepEqual(chamadas[4].valores, [8, 27]);
+});
 
-  const aFazer = await request(app)
-    .post('/tarefas')
-    .set('Authorization', `Bearer ${token}`)
-    .send({ texto: 'A fazer', coluna: 'afazer' });
-  const mover = await request(app)
-    .put(`/tarefas/${aFazer.body.id}`)
-    .set('Authorization', `Bearer ${token}`)
-    .send({ coluna: 'em andamento' });
+test('tarefas filtram pelo dono e usam os nomes de coluna do Neon', async t => {
+  const queryOriginal = pool.query;
+  const chamadas = [];
+  t.after(() => {
+    pool.query = queryOriginal;
+  });
 
-  assert.equal(aFazer.status, 201);
-  assert.equal(mover.status, 400);
-  assert.equal(mover.body.erro, 'Limite de 2 tarefas em andamento por usuário atingido');
+  pool.query = async (sql, valores = []) => {
+    chamadas.push({ sql, valores });
+    if (sql.includes('COUNT(*)')) return { rows: [{ total: '2' }], rowCount: 1 };
+    if (sql.startsWith('DELETE')) return { rows: [{ id: 3 }], rowCount: 1 };
+    return {
+      rows: [{
+        id: 3,
+        texto: 'Tarefa',
+        coluna: 'andamento',
+        ordem: 1,
+        projetoId: 8,
+        usuarioId: 27,
+      }],
+      rowCount: 1,
+    };
+  };
+
+  await tarefaModel.listarTarefas(27);
+  await tarefaModel.buscarTarefaPorId(3, 27);
+  await tarefaModel.contarTarefasEmAndamento(27, 3);
+  assert.equal(await tarefaModel.deletarTarefa(3, 27), true);
+
+  assert.deepEqual(chamadas[0].valores, [27]);
+  assert.match(chamadas[0].sql, /projeto_id AS "projetoId"/);
+  assert.match(chamadas[0].sql, /usuario_id = \$1/);
+  assert.deepEqual(chamadas[1].valores, [3, 27]);
+  assert.deepEqual(chamadas[2].valores, [27, 3]);
+  assert.match(chamadas[2].sql, /coluna = 'doing'/);
+  assert.deepEqual(chamadas[3].valores, [3, 27]);
+  assert.match(chamadas[3].sql, /usuario_id = \$2/);
 });

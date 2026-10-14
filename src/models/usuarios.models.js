@@ -1,85 +1,188 @@
-const fs = require('fs/promises');
-const path = require('path');
 const crypto = require('crypto');
+const { promisify } = require('util');
+const pool = require('../database/db');
 
-const CAMINHO_ARQUIVO = path.join(__dirname, '../data/usuarios.json');
+const scrypt = promisify(crypto.scrypt);
+const TAMANHO_HASH = 64;
 
-async function listarUsuarios() {
-  try {
-    const conteudo = await fs.readFile(CAMINHO_ARQUIVO, 'utf-8');
-    return JSON.parse(conteudo);
-  } catch (erro) {
-    return [];
+const CAMPOS_USUARIO = `
+  id,
+  nome,
+  email,
+  criado_em AS "criadoEm",
+  atualizado_em AS "atualizadoEm"
+`;
+
+async function gerarHashSenha(senha) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = await scrypt(senha, salt, TAMANHO_HASH);
+  return `scrypt$${salt}$${hash.toString('hex')}`;
+}
+
+async function verificarSenha(senha, senhaHash) {
+  const [algoritmo, salt, hashSalvo] = String(senhaHash).split('$');
+
+  if (algoritmo === 'scrypt') {
+    if (!salt || !hashSalvo) {
+      return { valida: false, precisaAtualizarHash: false };
+    }
+
+    const hashBuffer = Buffer.from(hashSalvo, 'hex');
+    if (hashBuffer.length !== TAMANHO_HASH) {
+      return { valida: false, precisaAtualizarHash: false };
+    }
+
+    const hashCalculado = await scrypt(senha, salt, TAMANHO_HASH);
+    return {
+      valida: crypto.timingSafeEqual(hashCalculado, hashBuffer),
+      precisaAtualizarHash: false,
+    };
+  }
+
+  {
+    const senhaBuffer = Buffer.from(String(senha));
+    const hashBuffer = Buffer.from(String(senhaHash));
+
+    if (senhaBuffer.length !== hashBuffer.length) {
+      return { valida: false, precisaAtualizarHash: false };
+    }
+
+    return {
+      valida: crypto.timingSafeEqual(senhaBuffer, hashBuffer),
+      precisaAtualizarHash: true,
+    };
   }
 }
 
-async function salvarArquivo(lista) {
-  await fs.writeFile(CAMINHO_ARQUIVO, JSON.stringify(lista, null, 2));
+async function listarUsuarios() {
+  const resultado = await pool.query(
+    `SELECT ${CAMPOS_USUARIO} FROM usuarios ORDER BY id`
+  );
+  return resultado.rows;
 }
 
 async function buscarUsuarioPorId(id) {
-  const usuarios = await listarUsuarios();
-  return usuarios.find(u => String(u.id) === String(id));
+  const resultado = await pool.query(
+    `SELECT ${CAMPOS_USUARIO} FROM usuarios WHERE id = $1`,
+    [id]
+  );
+  return resultado.rows[0];
 }
 
 async function buscarUsuarioPorEmail(email) {
-  const usuarios = await listarUsuarios();
-  return usuarios.find(u => u.email === email);
+  const resultado = await pool.query(
+    `SELECT ${CAMPOS_USUARIO} FROM usuarios WHERE email = $1`,
+    [email]
+  );
+  return resultado.rows[0];
+}
+
+async function autenticarUsuario(email, senha) {
+  const resultado = await pool.query(
+    `SELECT id, nome, email, senha_hash
+     FROM usuarios
+     WHERE email = $1`,
+    [email]
+  );
+  const usuario = resultado.rows[0];
+
+  if (!usuario) return null;
+
+  const verificacao = await verificarSenha(senha, usuario.senha_hash);
+  if (!verificacao.valida) return null;
+
+  if (verificacao.precisaAtualizarHash) {
+    const senhaHash = await gerarHashSenha(senha);
+    await pool.query(
+      'UPDATE usuarios SET senha_hash = $1, atualizado_em = NOW() WHERE id = $2',
+      [senhaHash, usuario.id]
+    );
+  }
+
+  return {
+    id: usuario.id,
+    nome: usuario.nome,
+    email: usuario.email,
+  };
 }
 
 async function adicionarUsuario(dados) {
-  const usuarios = await listarUsuarios();
-  
-  const emailExiste = usuarios.some(u => u.email === dados.email);
-  if (emailExiste) {
-    throw new Error('Email já cadastrado');
+  const senhaHash = await gerarHashSenha(dados.senha);
+
+  try {
+    const resultado = await pool.query(
+      `INSERT INTO usuarios (nome, email, senha_hash)
+       VALUES ($1, $2, $3)
+       RETURNING ${CAMPOS_USUARIO}`,
+      [dados.nome, dados.email, senhaHash]
+    );
+    return resultado.rows[0];
+  } catch (erro) {
+    if (erro.code === '23505') {
+      const duplicado = new Error('Email já cadastrado');
+      duplicado.code = 'USER_EMAIL_EXISTS';
+      throw duplicado;
+    }
+    throw erro;
   }
-
-  const novoUsuario = {
-    id: crypto.randomInt(1000, 10000),
-    nome: dados.nome,
-    email: dados.email,
-    senha: dados.senha
-  };
-
-  usuarios.push(novoUsuario);
-  await salvarArquivo(usuarios);
-
-  // Retorna o usuário criado sem expor a senha no retorno
-  const { senha, ...usuarioSemSenha } = novoUsuario;
-  return usuarioSemSenha;
 }
 
 async function atualizarUsuario(id, dadosNovos) {
-  const usuarios = await listarUsuarios();
-  const indice = usuarios.findIndex(u => String(u.id) === String(id));
+  const campos = [];
+  const valores = [];
 
-  if (indice === -1) return null;
+  if (dadosNovos.nome !== undefined) {
+    valores.push(dadosNovos.nome);
+    campos.push(`nome = $${valores.length}`);
+  }
 
-  usuarios[indice] = {
-    ...usuarios[indice],
-    ...dadosNovos,
-    id: usuarios[indice].id
-  };
+  if (dadosNovos.email !== undefined) {
+    valores.push(dadosNovos.email);
+    campos.push(`email = $${valores.length}`);
+  }
 
-  await salvarArquivo(usuarios);
-  return usuarios[indice];
+  if (dadosNovos.senha !== undefined) {
+    valores.push(await gerarHashSenha(dadosNovos.senha));
+    campos.push(`senha_hash = $${valores.length}`);
+  }
+
+  if (campos.length === 0) {
+    return buscarUsuarioPorId(id);
+  }
+
+  valores.push(id);
+  try {
+    const resultado = await pool.query(
+      `UPDATE usuarios
+       SET ${campos.join(', ')}, atualizado_em = NOW()
+       WHERE id = $${valores.length}
+       RETURNING ${CAMPOS_USUARIO}`,
+      valores
+    );
+    return resultado.rows[0] || null;
+  } catch (erro) {
+    if (erro.code === '23505') {
+      const duplicado = new Error('Email já cadastrado');
+      duplicado.code = 'USER_EMAIL_EXISTS';
+      throw duplicado;
+    }
+    throw erro;
+  }
 }
 
 async function deletarUsuario(id) {
-  const usuarios = await listarUsuarios();
-  const usuariosFiltrados = usuarios.filter(u => String(u.id) !== String(id));
-
-  if (usuarios.length === usuariosFiltrados.length) return false;
-
-  await salvarArquivo(usuariosFiltrados);
-  return true;
+  const resultado = await pool.query(
+    'DELETE FROM usuarios WHERE id = $1 RETURNING id',
+    [id]
+  );
+  return resultado.rowCount > 0;
 }
 
 module.exports = {
   listarUsuarios,
   buscarUsuarioPorId,
   buscarUsuarioPorEmail,
+  autenticarUsuario,
   adicionarUsuario,
   atualizarUsuario,
   deletarUsuario

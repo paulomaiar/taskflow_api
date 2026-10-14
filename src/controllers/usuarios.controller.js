@@ -3,8 +3,7 @@ const tarefaModel = require('../models/tarefas.models');
 
 async function listar(req, res) {
   const usuarios = await usuarioModel.listarUsuarios();
-  const usuariosFormatados = usuarios.map(({ senha, ...u }) => u);
-  return res.json(usuariosFormatados);
+  return res.json(usuarios);
 }
 
 async function buscarPorId(req, res) {
@@ -15,8 +14,7 @@ async function buscarPorId(req, res) {
     return res.status(404).json({ erro: 'Usuário não encontrado' });
   }
 
-  const { senha, ...usuarioSemSenha } = usuario;
-  return res.json(usuarioSemSenha);
+  return res.json(usuario);
 }
 
 async function criar(req, res) {
@@ -30,7 +28,10 @@ async function criar(req, res) {
     const novoUsuario = await usuarioModel.adicionarUsuario(req.body);
     return res.status(201).json(novoUsuario);
   } catch (erro) {
-    return res.status(400).json({ erro: erro.message });
+    if (erro.code === 'USER_EMAIL_EXISTS') {
+      return res.status(400).json({ erro: erro.message });
+    }
+    throw erro;
   }
 }
 
@@ -42,8 +43,7 @@ async function atualizar(req, res) {
     return res.status(404).json({ erro: 'Usuário não encontrado' });
   }
 
-  const { senha, ...usuarioSemSenha } = usuarioAtualizado;
-  return res.json(usuarioSemSenha);
+  return res.json(usuarioAtualizado);
 }
 
 async function deletar(req, res) {

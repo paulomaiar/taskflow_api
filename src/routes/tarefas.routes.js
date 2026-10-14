@@ -4,10 +4,11 @@ const autenticar = require('../middlewares/autenticar');
 
 const router = Router();
 
+router.use(autenticar);
 router.get('/', tarefaController.listar);
 router.get('/:id', tarefaController.buscarPorId);
-router.post('/', autenticar, tarefaController.criar);
-router.put('/:id', autenticar, tarefaController.atualizar);
-router.delete('/:id', autenticar, tarefaController.deletar);
+router.post('/', tarefaController.criar);
+router.put('/:id', tarefaController.atualizar);
+router.delete('/:id', tarefaController.deletar);
 
 module.exports = router;

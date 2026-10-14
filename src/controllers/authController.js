@@ -11,10 +11,7 @@ async function login(req, res) {
     return res.status(400).json({ erro: 'E-mail e senha são obrigatórios' });
   }
 
-  const usuarios = await usuarioModel.listarUsuarios();
-  const usuarioEncontrado = usuarios.find(
-    u => (u.email === identificador || u.usuario === identificador) && u.senha === senha
-  );
+  const usuarioEncontrado = await usuarioModel.autenticarUsuario(identificador, senha);
 
   if (!usuarioEncontrado) {
     return res.status(401).json({ erro: 'E-mail ou senha inválidos' });
@@ -27,11 +24,9 @@ async function login(req, res) {
     { expiresIn: '1d' }
   );
 
-  const { senha: _, ...usuarioSemSenha } = usuarioEncontrado;
-
   return res.json({
     token,
-    usuario: usuarioSemSenha
+    usuario: usuarioEncontrado
   });
 }
 
