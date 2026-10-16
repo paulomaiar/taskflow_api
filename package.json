@@ -5,7 +5,9 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "node --test tests/auth.test.js"
+    "test": "node --test tests/auth.test.js",
+    "db:migrate": "node scripts/migrate.js",
+    "db:import-json": "node scripts/import-json-to-postgres.js"
   },
   "keywords": [],
   "author": "",

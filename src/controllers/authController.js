@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const usuarioModel = require('../models/usuarios.models');
+const criarErro = require('../utils/criarErro');
 
 async function login(req, res) {
   const { email, usuario, senha } = req.body;
@@ -8,13 +9,13 @@ async function login(req, res) {
   const identificador = email || usuario;
 
   if (!identificador || !senha) {
-    return res.status(400).json({ erro: 'E-mail e senha são obrigatórios' });
+    throw criarErro(400, 'E-mail e senha são obrigatórios');
   }
 
   const usuarioEncontrado = await usuarioModel.autenticarUsuario(identificador, senha);
 
   if (!usuarioEncontrado) {
-    return res.status(401).json({ erro: 'E-mail ou senha inválidos' });
+    throw criarErro(401, 'E-mail ou senha inválidos');
   }
 
   const secret = process.env.JWT_SECRET || 'fallback_secret';

@@ -179,6 +179,7 @@ async function deletarUsuario(id) {
 }
 
 module.exports = {
+  gerarHashSenha,
   listarUsuarios,
   buscarUsuarioPorId,
   buscarUsuarioPorEmail,

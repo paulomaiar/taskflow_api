@@ -1,4 +1,5 @@
 const tarefaModel = require('../models/tarefas.models');
+const criarErro = require('../utils/criarErro');
 
 const colunasValidas = ['afazer', 'andamento', 'concluido'];
 const CAMPOS_NAO_SUPORTADOS = ['prioridade', 'cidade', 'concluida', 'concluidaEm'];
@@ -33,9 +34,9 @@ function validarCamposSuportados(dados) {
   );
 }
 
-function responderErroDoModel(erro, res) {
+function encaminharErroDoModel(erro) {
   if (erro.code === 'TASK_IN_PROGRESS_LIMIT') {
-    return res.status(400).json({ erro: erro.message });
+    throw criarErro(400, erro.message);
   }
 
   throw erro;
@@ -46,9 +47,7 @@ async function listar(req, res) {
   const { coluna, projetoId, prioridade } = req.query;
 
   if (prioridade !== undefined) {
-    return res.status(400).json({
-      erro: 'Filtro por prioridade não é suportado pelo schema atual de tarefas',
-    });
+    throw criarErro(400, 'Filtro por prioridade não é suportado pelo schema atual de tarefas');
   }
 
   if (projetoId !== undefined) {
@@ -58,9 +57,7 @@ async function listar(req, res) {
   if (coluna) {
     const colunaNormalizada = normalizarColuna(coluna);
     if (!colunasValidas.includes(colunaNormalizada)) {
-      return res.status(400).json({
-        erro: 'Coluna inválida. Use: afazer, andamento ou concluido',
-      });
+      throw criarErro(400, 'Coluna inválida. Use: afazer, andamento ou concluido');
     }
     tarefas = tarefas.filter(t => t.coluna === colunaNormalizada);
   }
@@ -73,7 +70,7 @@ async function buscarPorId(req, res) {
   const tarefa = await tarefaModel.buscarTarefaPorId(id, req.usuario.id);
 
   if (!tarefa) {
-    return res.status(404).json({ erro: 'Tarefa não encontrada' });
+    throw criarErro(404, 'Tarefa não encontrada');
   }
 
   return res.json(tarefa);
@@ -85,43 +82,35 @@ async function criar(req, res) {
   const usuarioId = req.usuario?.id;
 
   if (!usuarioId) {
-    return res.status(401).json({ erro: 'Usuário não autenticado' });
+    throw criarErro(401, 'Usuário não autenticado');
   }
 
   const campoNaoSuportado = validarCamposSuportados(req.body);
   if (campoNaoSuportado) {
-    return res.status(400).json({
-      erro: `O campo ${campoNaoSuportado} não é suportado pelo schema atual de tarefas`,
-    });
+    throw criarErro(400, `O campo ${campoNaoSuportado} não é suportado pelo schema atual de tarefas`);
   }
 
   if (!texto) {
-    return res.status(400).json({ erro: 'O campo texto é obrigatório' });
+    throw criarErro(400, 'O campo texto é obrigatório');
   }
 
   if (!Number.isInteger(Number(projetoId)) || Number(projetoId) <= 0) {
-    return res.status(400).json({
-      erro: 'O campo projetoId é obrigatório e deve ser um número inteiro positivo',
-    });
+    throw criarErro(400, 'O campo projetoId é obrigatório e deve ser um número inteiro positivo');
   }
 
   if (colunaNormalizada !== undefined && !colunasValidas.includes(colunaNormalizada)) {
-    return res.status(400).json({
-      erro: 'Coluna inválida. Use: afazer, andamento ou concluido'
-    });
+    throw criarErro(400, 'Coluna inválida. Use: afazer, andamento ou concluido');
   }
 
   if (ordem !== undefined && !Number.isInteger(ordem)) {
-    return res.status(400).json({ erro: 'O campo ordem deve ser um número inteiro' });
+    throw criarErro(400, 'O campo ordem deve ser um número inteiro');
   }
 
   if (colunaNormalizada === 'andamento') {
     const quantidade = await tarefaModel.contarTarefasEmAndamento(usuarioId);
 
     if (quantidade >= 2) {
-      return res.status(400).json({
-        erro: 'Limite de 2 tarefas em andamento por usuário atingido'
-      });
+      throw criarErro(400, 'Limite de 2 tarefas em andamento por usuário atingido');
     }
   }
 
@@ -136,11 +125,11 @@ async function criar(req, res) {
   try {
     const novaTarefa = await tarefaModel.adicionarTarefa(dadosParaSalvar);
     if (!novaTarefa) {
-      return res.status(404).json({ erro: 'Projeto não encontrado para este usuário' });
+      throw criarErro(404, 'Projeto não encontrado para este usuário');
     }
     return res.status(201).json(novaTarefa);
   } catch (erro) {
-    return responderErroDoModel(erro, res);
+    return encaminharErroDoModel(erro);
   }
 }
 
@@ -152,41 +141,35 @@ async function atualizar(req, res) {
   const usuarioId = req.usuario?.id;
 
   if (!usuarioId) {
-    return res.status(401).json({ erro: 'Usuário não autenticado' });
+    throw criarErro(401, 'Usuário não autenticado');
   }
 
   const campoNaoSuportado = validarCamposSuportados(req.body);
   if (campoNaoSuportado) {
-    return res.status(400).json({
-      erro: `O campo ${campoNaoSuportado} não é suportado pelo schema atual de tarefas`,
-    });
+    throw criarErro(400, `O campo ${campoNaoSuportado} não é suportado pelo schema atual de tarefas`);
   }
 
   if (colunaNormalizada !== undefined && !colunasValidas.includes(colunaNormalizada)) {
-    return res.status(400).json({
-      erro: 'Coluna inválida. Use: afazer, andamento ou concluido',
-    });
+    throw criarErro(400, 'Coluna inválida. Use: afazer, andamento ou concluido');
   }
 
   if (req.body.texto !== undefined) {
     if (!req.body.texto) {
-      return res.status(400).json({ erro: 'O campo texto não pode ser vazio' });
+      throw criarErro(400, 'O campo texto não pode ser vazio');
     }
     dadosAtualizados.texto = req.body.texto;
   }
 
   if (ordem !== undefined) {
     if (!Number.isInteger(ordem)) {
-      return res.status(400).json({ erro: 'O campo ordem deve ser um número inteiro' });
+      throw criarErro(400, 'O campo ordem deve ser um número inteiro');
     }
     dadosAtualizados.ordem = ordem;
   }
 
   if (projetoId !== undefined) {
     if (!Number.isInteger(Number(projetoId)) || Number(projetoId) <= 0) {
-      return res.status(400).json({
-        erro: 'O campo projetoId deve ser um número inteiro positivo',
-      });
+      throw criarErro(400, 'O campo projetoId deve ser um número inteiro positivo');
     }
     dadosAtualizados.projetoId = Number(projetoId);
   }
@@ -197,11 +180,7 @@ async function atualizar(req, res) {
 
   const tarefaAtual = await tarefaModel.buscarTarefaPorId(id, usuarioId);
   if (!tarefaAtual) {
-    return res.status(404).json({ erro: 'Tarefa não encontrada' });
-  }
-
-  if (String(tarefaAtual.usuarioId) !== String(usuarioId)) {
-    return res.status(404).json({ erro: 'Tarefa não encontrada' });
+    throw criarErro(404, 'Tarefa não encontrada');
   }
 
   const colunaFinal = colunaNormalizada || tarefaAtual.coluna;
@@ -209,9 +188,7 @@ async function atualizar(req, res) {
     const quantidade = await tarefaModel.contarTarefasEmAndamento(usuarioId, id);
 
     if (quantidade >= 2) {
-      return res.status(400).json({
-        erro: 'Limite de 2 tarefas em andamento por usuário atingido'
-      });
+      throw criarErro(400, 'Limite de 2 tarefas em andamento por usuário atingido');
     }
   }
 
@@ -223,12 +200,12 @@ async function atualizar(req, res) {
     );
 
     if (!tarefaAtualizada) {
-      return res.status(404).json({ erro: 'Tarefa ou projeto não encontrado' });
+      throw criarErro(404, 'Tarefa ou projeto não encontrado');
     }
 
     return res.json(tarefaAtualizada);
   } catch (erro) {
-    return responderErroDoModel(erro, res);
+    return encaminharErroDoModel(erro);
   }
 }
 
@@ -237,10 +214,10 @@ async function deletar(req, res) {
   const deletado = await tarefaModel.deletarTarefa(id, req.usuario.id);
 
   if (!deletado) {
-    return res.status(404).json({ erro: 'Tarefa não encontrada' });
+    throw criarErro(404, 'Tarefa não encontrada');
   }
 
-  return res.json({ mensagem: 'Tarefa removida com sucesso', id });
+  return res.status(204).end();
 }
 
 module.exports = { listar, buscarPorId, criar, atualizar, deletar };

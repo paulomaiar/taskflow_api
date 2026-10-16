@@ -1,4 +1,5 @@
 const projetoModel = require('../models/projeto.model');
+const criarErro = require('../utils/criarErro');
 
 async function listar(req, res) {
   const projetos = await projetoModel.listarProjetos(req.usuario.id);
@@ -9,7 +10,7 @@ async function buscarPorId(req, res) {
   const projeto = await projetoModel.buscarProjetoPorId(req.params.id, req.usuario.id);
 
   if (!projeto) {
-    return res.status(404).json({ erro: 'Projeto não encontrado' });
+    throw criarErro(404, 'Projeto não encontrado');
   }
 
   return res.json(projeto);
@@ -19,7 +20,7 @@ async function criar(req, res) {
   const { nome } = req.body;
 
   if (!nome) {
-    return res.status(400).json({ erro: 'Nome é obrigatório' });
+    throw criarErro(400, 'Nome é obrigatório');
   }
 
   const novoProjeto = await projetoModel.adicionarProjeto(req.body, req.usuario.id);
@@ -34,7 +35,7 @@ async function atualizar(req, res) {
   );
 
   if (!projetoAtualizado) {
-    return res.status(404).json({ erro: 'Projeto não encontrado' });
+    throw criarErro(404, 'Projeto não encontrado');
   }
 
   return res.json(projetoAtualizado);
@@ -44,10 +45,10 @@ async function remover(req, res) {
   const deletado = await projetoModel.deletarProjeto(req.params.id, req.usuario.id);
 
   if (!deletado) {
-    return res.status(404).json({ erro: 'Projeto não encontrado' });
+    throw criarErro(404, 'Projeto não encontrado');
   }
 
-  return res.json({ mensagem: 'Projeto removido com sucesso', id: req.params.id });
+  return res.status(204).end();
 }
 
 module.exports = { listar, buscarPorId, criar, atualizar, remover };

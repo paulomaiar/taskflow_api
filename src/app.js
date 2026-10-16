@@ -10,6 +10,8 @@ if (!process.env.JWT_SECRET) {
 const logger = require('./middlewares/logger');
 const validarContentType = require('./middlewares/validarContentType');
 const temporizador = require('./middlewares/temporizador');
+const criarErro = require('./utils/criarErro');
+const tratarErros = require('./middlewares/erro.middleware');
 const tarefaRoutes = require('./routes/tarefas.routes');
 const usuarioRoutes = require('./routes/usuarios.routes');
 const estatisticaRoutes = require('./routes/estatisticas.routes');
@@ -50,12 +52,9 @@ app.use('/tarefas', tarefaRoutes);
 app.use('/usuarios', usuarioRoutes);
 app.use('/estatisticas', estatisticaRoutes);
 app.use('/projetos', projetosRoutes);
-app.use((req, res) => {
-  res.status(404).json({
-    erro: 'Rota não encontrada',
-    metodo: req.method,
-    caminho: req.url,
-  });
+app.use((req, res, next) => {
+  next(criarErro(404, 'Rota não encontrada'));
 });
+app.use(tratarErros);
 
 module.exports = app;
