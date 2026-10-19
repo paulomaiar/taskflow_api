@@ -14,6 +14,39 @@ test('rotas com dados de usuário exigem autenticação', async () => {
   }
 });
 
+test('params e filtros inválidos retornam 400 com detalhes estruturados', async () => {
+  const respostaId = await request(app).get('/tarefas/abc');
+  assert.equal(respostaId.status, 400);
+  assert.deepEqual(respostaId.body, {
+    erro: {
+      mensagem: 'Dados inválidos',
+      detalhes: [{ campo: 'id', mensagem: 'deve ser um número inteiro positivo' }],
+    },
+  });
+
+  const respostaFiltro = await request(app).get('/tarefas?projetoId=abc');
+  assert.equal(respostaFiltro.status, 400);
+  assert.deepEqual(respostaFiltro.body, {
+    erro: {
+      mensagem: 'Dados inválidos',
+      detalhes: [{
+        campo: 'projetoId',
+        mensagem: 'deve ser um número inteiro positivo',
+      }],
+    },
+  });
+});
+
+test('rotas inexistentes retornam 404 com método e caminho', async () => {
+  const resposta = await request(app).get('/rota-invalida');
+  assert.equal(resposta.status, 404);
+  assert.deepEqual(resposta.body, {
+    erro: {
+      mensagem: 'Rota GET /rota-invalida não encontrada',
+    },
+  });
+});
+
 test('cadastro e login persistem usuários no PostgreSQL com senha protegida', async t => {
   const queryOriginal = pool.query;
   let usuarioCriado;
@@ -136,10 +169,106 @@ test('tarefas filtram pelo dono e usam os nomes de coluna do Neon', async t => {
 
   assert.deepEqual(chamadas[0].valores, [27]);
   assert.match(chamadas[0].sql, /projeto_id AS "projetoId"/);
-  assert.match(chamadas[0].sql, /usuario_id = \$1/);
+  assert.match(chamadas[0].sql, /FROM buscar_tarefas_usuario\(\$1\)/);
   assert.deepEqual(chamadas[1].valores, [3, 27]);
   assert.deepEqual(chamadas[2].valores, [27, 3]);
   assert.match(chamadas[2].sql, /coluna = 'doing'/);
   assert.deepEqual(chamadas[3].valores, [3, 27]);
   assert.match(chamadas[3].sql, /usuario_id = \$2/);
+});
+
+test('tarefas chamam funções e procedure com parâmetros e ownership verificado', async t => {
+  const connectOriginal = pool.connect;
+  const chamadas = [];
+  t.after(() => {
+    pool.connect = connectOriginal;
+  });
+
+  pool.connect = async () => ({
+    query: async (sql, valores = []) => {
+      chamadas.push({ sql, valores });
+      if (sql.includes('SELECT id FROM tarefas')) {
+        return { rows: [{ id: 3 }], rowCount: 1 };
+      }
+      if (sql.includes('SELECT id FROM projetos')) {
+        return { rows: [{ id: 8 }], rowCount: 1 };
+      }
+      if (sql.includes('FROM avancar_tarefa')) {
+        return {
+          rows: [{ id: 3, coluna: 'andamento', projetoId: 8, usuarioId: 27 }],
+          rowCount: 1,
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    },
+    release() {},
+  });
+
+  const avancada = await tarefaModel.avancarTarefa(3, 27);
+  assert.equal(avancada.coluna, 'andamento');
+  assert.deepEqual(chamadas[1].valores, [3, 27]);
+  assert.deepEqual(chamadas[2].valores, [3]);
+  assert.match(chamadas[2].sql, /FROM avancar_tarefa\(\$1\)/);
+
+  assert.equal(await tarefaModel.limparTarefasConcluidas(8, 27), true);
+  assert.deepEqual(chamadas[5].valores, [8, 27]);
+  assert.deepEqual(chamadas[6].valores, [8]);
+  assert.match(chamadas[6].sql, /CALL limpar_tarefas_concluidas\(\$1\)/);
+});
+
+test('atualizar tarefa grava timestamps de início e conclusão com ownership', async t => {
+  const connectOriginal = pool.connect;
+  const updates = [];
+  let tarefaAtual;
+
+  t.after(() => {
+    pool.connect = connectOriginal;
+  });
+
+  pool.connect = async () => ({
+    query: async (sql, valores = []) => {
+      if (sql.includes('COUNT(*) AS total')) {
+        return { rows: [{ total: '0' }], rowCount: 1 };
+      }
+      if (sql.includes('FROM usuarios')) {
+        return { rows: [{ id: 27 }], rowCount: 1 };
+      }
+      if (sql.includes('iniciada_em AS "iniciadaEm"')) {
+        return { rows: [tarefaAtual], rowCount: 1 };
+      }
+      if (sql.startsWith('UPDATE tarefas')) {
+        updates.push({ sql, valores });
+        return { rows: [{ id: 3 }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 0 };
+    },
+    release() {},
+  });
+
+  tarefaAtual = {
+    id: 3,
+    texto: 'Tarefa',
+    coluna: 'afazer',
+    ordem: 1,
+    projetoId: 8,
+    usuarioId: 27,
+    iniciadaEm: null,
+  };
+  await tarefaModel.atualizarTarefa(3, { coluna: 'andamento' }, 27);
+
+  assert.deepEqual(updates[0].valores.slice(0, 1), ['doing']);
+  assert.equal(updates[0].valores[1], null);
+  assert.ok(updates[0].valores[2] instanceof Date);
+  assert.deepEqual(updates[0].valores.slice(3), [3, 27]);
+  assert.match(updates[0].sql, /concluido_em = \$2, iniciada_em = \$3/);
+  assert.match(updates[0].sql, /WHERE id = \$4 AND usuario_id = \$5/);
+
+  const iniciadaEm = new Date('2026-01-01T12:00:00.000Z');
+  tarefaAtual = { ...tarefaAtual, coluna: 'andamento', iniciadaEm };
+  await tarefaModel.atualizarTarefa(3, { coluna: 'concluido' }, 27);
+
+  assert.deepEqual(updates[1].valores.slice(0, 1), ['done']);
+  assert.ok(updates[1].valores[1] instanceof Date);
+  assert.equal(updates[1].valores[2], iniciadaEm);
+  assert.deepEqual(updates[1].valores.slice(3), [3, 27]);
 });

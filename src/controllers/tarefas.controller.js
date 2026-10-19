@@ -34,7 +34,7 @@ function validarCamposSuportados(dados) {
   );
 }
 
-function encaminharErroDoModel(erro) {
+function traduzirErroDoModel(erro) {
   if (erro.code === 'TASK_IN_PROGRESS_LIMIT') {
     throw criarErro(400, erro.message);
   }
@@ -43,6 +43,11 @@ function encaminharErroDoModel(erro) {
 }
 
 async function listar(req, res) {
+  const { usuarioId } = req.query;
+  if (usuarioId !== undefined && Number(usuarioId) !== Number(req.usuario.id)) {
+    return res.json([]);
+  }
+
   let tarefas = await tarefaModel.listarTarefas(req.usuario.id);
   const { coluna, projetoId, prioridade } = req.query;
 
@@ -70,14 +75,30 @@ async function buscarPorId(req, res) {
   const tarefa = await tarefaModel.buscarTarefaPorId(id, req.usuario.id);
 
   if (!tarefa) {
-    throw criarErro(404, 'Tarefa não encontrada');
+    throw criarErro(404, 'Recurso não encontrado');
+  }
+
+  return res.json(tarefa);
+}
+
+async function avancar(req, res) {
+  let tarefa;
+  try {
+    tarefa = await tarefaModel.avancarTarefa(req.params.id, req.usuario.id);
+  } catch (erro) {
+    return traduzirErroDoModel(erro);
+  }
+
+  if (!tarefa) {
+    throw criarErro(404, 'Recurso não encontrado');
   }
 
   return res.json(tarefa);
 }
 
 async function criar(req, res) {
-  const { texto, projetoId, ordem, coluna } = req.body;
+  const corpo = req.body || {};
+  const { texto, projetoId, ordem, coluna } = corpo;
   const colunaNormalizada = normalizarColuna(coluna);
   const usuarioId = req.usuario?.id;
 
@@ -85,13 +106,13 @@ async function criar(req, res) {
     throw criarErro(401, 'Usuário não autenticado');
   }
 
-  const campoNaoSuportado = validarCamposSuportados(req.body);
+  const campoNaoSuportado = validarCamposSuportados(corpo);
   if (campoNaoSuportado) {
     throw criarErro(400, `O campo ${campoNaoSuportado} não é suportado pelo schema atual de tarefas`);
   }
 
-  if (!texto) {
-    throw criarErro(400, 'O campo texto é obrigatório');
+  if (typeof texto !== 'string' || !texto.trim()) {
+    throw criarErro(400, 'O campo texto é obrigatório e não pode ser vazio');
   }
 
   if (!Number.isInteger(Number(projetoId)) || Number(projetoId) <= 0) {
@@ -129,13 +150,14 @@ async function criar(req, res) {
     }
     return res.status(201).json(novaTarefa);
   } catch (erro) {
-    return encaminharErroDoModel(erro);
+    return traduzirErroDoModel(erro);
   }
 }
 
 async function atualizar(req, res) {
   const { id } = req.params;
-  const { coluna, projetoId, ordem } = req.body;
+  const corpo = req.body || {};
+  const { coluna, projetoId, ordem } = corpo;
   const colunaNormalizada = normalizarColuna(coluna);
   const dadosAtualizados = {};
   const usuarioId = req.usuario?.id;
@@ -144,7 +166,7 @@ async function atualizar(req, res) {
     throw criarErro(401, 'Usuário não autenticado');
   }
 
-  const campoNaoSuportado = validarCamposSuportados(req.body);
+  const campoNaoSuportado = validarCamposSuportados(corpo);
   if (campoNaoSuportado) {
     throw criarErro(400, `O campo ${campoNaoSuportado} não é suportado pelo schema atual de tarefas`);
   }
@@ -153,11 +175,11 @@ async function atualizar(req, res) {
     throw criarErro(400, 'Coluna inválida. Use: afazer, andamento ou concluido');
   }
 
-  if (req.body.texto !== undefined) {
-    if (!req.body.texto) {
+  if (corpo.texto !== undefined) {
+    if (typeof corpo.texto !== 'string' || !corpo.texto.trim()) {
       throw criarErro(400, 'O campo texto não pode ser vazio');
     }
-    dadosAtualizados.texto = req.body.texto;
+    dadosAtualizados.texto = corpo.texto;
   }
 
   if (ordem !== undefined) {
@@ -178,9 +200,13 @@ async function atualizar(req, res) {
     dadosAtualizados.coluna = colunaNormalizada;
   }
 
+  if (Object.keys(dadosAtualizados).length === 0) {
+    throw criarErro(400, 'Informe ao menos um campo para atualizar');
+  }
+
   const tarefaAtual = await tarefaModel.buscarTarefaPorId(id, usuarioId);
   if (!tarefaAtual) {
-    throw criarErro(404, 'Tarefa não encontrada');
+    throw criarErro(404, 'Recurso não encontrado');
   }
 
   const colunaFinal = colunaNormalizada || tarefaAtual.coluna;
@@ -200,12 +226,12 @@ async function atualizar(req, res) {
     );
 
     if (!tarefaAtualizada) {
-      throw criarErro(404, 'Tarefa ou projeto não encontrado');
+      throw criarErro(404, 'Recurso não encontrado');
     }
 
     return res.json(tarefaAtualizada);
   } catch (erro) {
-    return encaminharErroDoModel(erro);
+    return traduzirErroDoModel(erro);
   }
 }
 
@@ -214,10 +240,10 @@ async function deletar(req, res) {
   const deletado = await tarefaModel.deletarTarefa(id, req.usuario.id);
 
   if (!deletado) {
-    throw criarErro(404, 'Tarefa não encontrada');
+    throw criarErro(404, 'Recurso não encontrado');
   }
 
   return res.status(204).end();
 }
 
-module.exports = { listar, buscarPorId, criar, atualizar, deletar };
+module.exports = { listar, buscarPorId, avancar, criar, atualizar, deletar };

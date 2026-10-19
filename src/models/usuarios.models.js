@@ -71,20 +71,16 @@ async function buscarUsuarioPorId(id) {
 
 async function buscarUsuarioPorEmail(email) {
   const resultado = await pool.query(
-    `SELECT ${CAMPOS_USUARIO} FROM usuarios WHERE email = $1`,
+    `SELECT id, nome, email, senha_hash
+     FROM usuarios
+     WHERE email = $1`,
     [email]
   );
   return resultado.rows[0];
 }
 
 async function autenticarUsuario(email, senha) {
-  const resultado = await pool.query(
-    `SELECT id, nome, email, senha_hash
-     FROM usuarios
-     WHERE email = $1`,
-    [email]
-  );
-  const usuario = resultado.rows[0];
+  const usuario = await buscarUsuarioPorEmail(email);
 
   if (!usuario) return null;
 

@@ -52,8 +52,8 @@ app.use('/tarefas', tarefaRoutes);
 app.use('/usuarios', usuarioRoutes);
 app.use('/estatisticas', estatisticaRoutes);
 app.use('/projetos', projetosRoutes);
-app.use((req, res, next) => {
-  next(criarErro(404, 'Rota não encontrada'));
+app.use((req, res) => {
+  throw criarErro(404, `Rota ${req.method} ${req.url} não encontrada`);
 });
 app.use(tratarErros);
 

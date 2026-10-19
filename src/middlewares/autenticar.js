@@ -14,10 +14,9 @@ function autenticar(req, res, next) {
     return next(criarErro(401, 'Formato do token inválido'));
   }
 
+  let payload;
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
-    req.usuario = payload;
-    return next();
+    payload = jwt.verify(token, process.env.JWT_SECRET);
   } catch (erro) {
     if (erro.name === 'TokenExpiredError') {
       return next(criarErro(401, 'Token expirado. Faça login novamente.'));
@@ -29,6 +28,9 @@ function autenticar(req, res, next) {
 
     return next(erro);
   }
+
+  req.usuario = payload;
+  return next();
 }
 
 module.exports = autenticar;

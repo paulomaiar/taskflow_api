@@ -1,26 +1,22 @@
 function tratarErros(erro, req, res, next) {
+  console.error('[ERRO]', req.method, req.url, erro.message);
+
   if (res.headersSent) {
     return next(erro);
   }
 
-  const statusInformado = Number(erro.status || erro.statusCode);
-  const status =
-    Number.isInteger(statusInformado) &&
-    statusInformado >= 400 &&
-    statusInformado <= 599
-      ? statusInformado
-      : 500;
+  const status = erro.status || 500;
 
-  if (status === 500) {
-    console.error(erro);
-    return res.status(500).json({
-      erro: { mensagem: 'Erro interno no servidor' },
-    });
+  const mensagem = status >= 500
+    ? 'Erro interno no servidor'
+    : erro.message || 'Erro inesperado';
+
+  const respostaErro = { mensagem };
+  if (erro.detalhes !== undefined) {
+    respostaErro.detalhes = erro.detalhes;
   }
 
-  return res.status(status).json({
-    erro: { mensagem: erro.message || 'Erro inesperado' },
-  });
+  return res.status(status).json({ erro: respostaErro });
 }
 
 module.exports = tratarErros;

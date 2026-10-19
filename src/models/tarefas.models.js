@@ -77,12 +77,71 @@ async function validarProjetoDoUsuario(client, projetoId, usuarioId) {
 async function listarTarefas(usuarioId) {
   const resultado = await pool.query(
     `SELECT ${CAMPOS_TAREFA}
-     FROM tarefas
-     WHERE usuario_id = $1
-     ORDER BY projeto_id, ordem, id`,
+     FROM buscar_tarefas_usuario($1)`,
     [usuarioId]
   );
   return resultado.rows;
+}
+
+async function avancarTarefa(id, usuarioId) {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+    const autorizacao = await client.query(
+      'SELECT id FROM tarefas WHERE id = $1 AND usuario_id = $2 FOR UPDATE',
+      [id, usuarioId]
+    );
+
+    if (autorizacao.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    const resultado = await client.query(
+      `SELECT ${CAMPOS_TAREFA}
+       FROM avancar_tarefa($1)`,
+      [id]
+    );
+
+    await client.query('COMMIT');
+    return resultado.rows[0] || null;
+  } catch (erro) {
+    await client.query('ROLLBACK');
+    if (erro.code === 'P0001' &&
+        erro.message === 'Limite de 2 tarefas em andamento por usuário atingido') {
+      erro.code = 'TASK_IN_PROGRESS_LIMIT';
+    }
+    throw erro;
+  } finally {
+    client.release();
+  }
+}
+
+async function limparTarefasConcluidas(projetoId, usuarioId) {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+    const autorizacao = await client.query(
+      'SELECT id FROM projetos WHERE id = $1 AND usuario_id = $2 FOR UPDATE',
+      [projetoId, usuarioId]
+    );
+
+    if (autorizacao.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return false;
+    }
+
+    await client.query('CALL limpar_tarefas_concluidas($1)', [projetoId]);
+    await client.query('COMMIT');
+    return true;
+  } catch (erro) {
+    await client.query('ROLLBACK');
+    throw erro;
+  } finally {
+    client.release();
+  }
 }
 
 async function buscarTarefaPorId(id, usuarioId) {
@@ -158,7 +217,7 @@ async function adicionarTarefa(dados) {
 
 async function atualizarTarefa(id, dadosNovos, usuarioId) {
   const atualizacoes = Object.entries(dadosNovos)
-    .filter(([campo]) => campo !== 'id');
+    .filter(([campo, valor]) => campo !== 'id' && valor !== undefined);
 
   for (const [campo] of atualizacoes) {
     if (!Object.prototype.hasOwnProperty.call(COLUNAS_ATUALIZAVEIS, campo)) {
@@ -171,7 +230,8 @@ async function atualizarTarefa(id, dadosNovos, usuarioId) {
   try {
     await client.query('BEGIN');
     const atual = await client.query(
-      `SELECT ${CAMPOS_TAREFA}
+      `SELECT ${CAMPOS_TAREFA},
+              iniciada_em AS "iniciadaEm"
        FROM tarefas
        WHERE id = $1 AND usuario_id = $2
        FOR UPDATE`,
@@ -192,6 +252,11 @@ async function atualizarTarefa(id, dadosNovos, usuarioId) {
     const valoresPorColuna = Object.fromEntries(atualizacoesMapeadas);
     const projetoId = valoresPorColuna.projeto_id ?? tarefaAtual.projetoId;
     const coluna = valoresPorColuna.coluna ?? colunaAtual;
+    const concluidoEm = valoresPorColuna.coluna === 'done' ? new Date() : null;
+    const iniciadoEm = valoresPorColuna.coluna === 'doing' &&
+      !tarefaAtual.iniciadaEm
+      ? new Date()
+      : tarefaAtual.iniciadaEm;
 
     if (coluna === 'doing') {
       await bloquearUsuario(client, usuarioId);
@@ -216,6 +281,10 @@ async function atualizarTarefa(id, dadosNovos, usuarioId) {
     const assignments = atualizacoesMapeadas.map(([campo], index) =>
       `${campo} = $${index + 1}`
     );
+    valores.push(concluidoEm);
+    assignments.push(`concluido_em = $${valores.length}`);
+    valores.push(iniciadoEm);
+    assignments.push(`iniciada_em = $${valores.length}`);
     valores.push(id);
 
     const resultado = await client.query(
@@ -246,6 +315,8 @@ async function deletarTarefa(id, usuarioId) {
 
 module.exports = {
   listarTarefas,
+  avancarTarefa,
+  limparTarefasConcluidas,
   buscarTarefaPorId,
   buscarPorUsuarioId,
   contarTarefasEmAndamento,
