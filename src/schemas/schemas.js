@@ -22,12 +22,18 @@ const schemas = {
   },
   tarefa: {
     texto: { obrigatorio: true, tipo: 'texto' },
-    projetoId: { obrigatorio: true, tipo: 'inteiro' },
+    projetoId: { obrigatorio: false, tipo: 'inteiro' },
+    projeto_id: { obrigatorio: false, tipo: 'inteiro' },
+    usuario_id: { obrigatorio: false, tipo: 'inteiro' },
+    idprioridade: { obrigatorio: false, tipo: 'inteiro' },
     coluna: { obrigatorio: false, tipo: 'texto' },
   },
   atualizacaoTarefa: {
     texto: { obrigatorio: false, tipo: 'texto' },
     projetoId: { obrigatorio: false, tipo: 'inteiro' },
+    projeto_id: { obrigatorio: false, tipo: 'inteiro' },
+    usuario_id: { obrigatorio: false, tipo: 'inteiro' },
+    idprioridade: { obrigatorio: false, tipo: 'inteiro' },
     coluna: { obrigatorio: false, tipo: 'texto' },
   },
   filtroTarefas: {

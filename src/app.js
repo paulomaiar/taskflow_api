@@ -17,6 +17,7 @@ const usuarioRoutes = require('./routes/usuarios.routes');
 const estatisticaRoutes = require('./routes/estatisticas.routes');
 const projetosRoutes = require('./routes/projetos.routes');
 const authRoutes = require('./routes/authRoutes');
+const prioridadesRoutes = require('./routes/prioridades.routes');
 
 const app = express();
 
@@ -52,6 +53,7 @@ app.use('/tarefas', tarefaRoutes);
 app.use('/usuarios', usuarioRoutes);
 app.use('/estatisticas', estatisticaRoutes);
 app.use('/projetos', projetosRoutes);
+app.use('/prioridades', prioridadesRoutes);
 app.use((req, res) => {
   throw criarErro(404, `Rota ${req.method} ${req.url} não encontrada`);
 });

@@ -1,0 +1,49 @@
+{
+  "generatedAt": "2026-10-21T11:41:37Z",
+  "generatedOnPlatform": "win32",
+  "projectType": "server",
+  "setup": [
+    {
+      "command": "npm",
+      "args": ["ci"],
+      "timeoutSeconds": 600
+    }
+  ],
+  "assertions": [
+    {
+      "name": "tests-pass",
+      "kind": "process",
+      "command": "npm",
+      "args": ["test"],
+      "verificationMethod": "test-results",
+      "expected": "0",
+      "timeoutSeconds": 300
+    },
+    {
+      "name": "api-root-200",
+      "kind": "http-probe",
+      "startCommand": "npm",
+      "startArgs": ["run", "start"],
+      "env": {
+        "PORT": "3201"
+      },
+      "url": "http://127.0.0.1:3201/",
+      "verificationMethod": "http-status",
+      "expected": "200",
+      "timeoutSeconds": 90
+    },
+    {
+      "name": "priorities-require-auth",
+      "kind": "http-probe",
+      "startCommand": "npm",
+      "startArgs": ["run", "start"],
+      "env": {
+        "PORT": "3201"
+      },
+      "url": "http://127.0.0.1:3201/prioridades",
+      "verificationMethod": "http-status",
+      "expected": "401",
+      "timeoutSeconds": 90
+    }
+  ]
+}

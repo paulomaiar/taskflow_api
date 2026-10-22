@@ -1,6 +1,13 @@
 const pool = require('../database/db');
 
-const CAMPOS_PROJETO = 'id, nome, descricao';
+const CAMPOS_PROJETO = `
+  id,
+  nome,
+  descricao,
+  usuario_id,
+  criado_em AS "criadoEm",
+  atualizado_em AS "atualizadoEm"
+`;
 
 async function listarProjetos(usuarioId) {
   const resultado = await pool.query(

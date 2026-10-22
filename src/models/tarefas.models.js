@@ -9,8 +9,12 @@ const CAMPOS_TAREFA = `
     WHEN 'done' THEN 'concluido'
   END AS coluna,
   ordem,
+  projeto_id,
   projeto_id AS "projetoId",
+  usuario_id,
   usuario_id AS "usuarioId",
+  idprioridade,
+  criado_por_id AS "criadoPorId",
   criado_em AS "criadoEm",
   atualizado_em AS "atualizadoEm"
 `;
@@ -20,6 +24,8 @@ const COLUNAS_ATUALIZAVEIS = {
   coluna: 'coluna',
   ordem: 'ordem',
   projetoId: 'projeto_id',
+  usuarioId: 'usuario_id',
+  idprioridade: 'idprioridade',
 };
 
 const STATUS_PERSISTIDOS = {
@@ -89,7 +95,9 @@ async function avancarTarefa(id, usuarioId) {
   try {
     await client.query('BEGIN');
     const autorizacao = await client.query(
-      'SELECT id FROM tarefas WHERE id = $1 AND usuario_id = $2 FOR UPDATE',
+      `SELECT id FROM tarefas
+       WHERE id = $1 AND (criado_por_id = $2 OR usuario_id = $2)
+       FOR UPDATE`,
       [id, usuarioId]
     );
 
@@ -148,7 +156,7 @@ async function buscarTarefaPorId(id, usuarioId) {
   const resultado = await pool.query(
     `SELECT ${CAMPOS_TAREFA}
      FROM tarefas
-     WHERE id = $1 AND usuario_id = $2`,
+     WHERE id = $1 AND (criado_por_id = $2 OR usuario_id = $2)`,
     [id, usuarioId]
   );
   return resultado.rows[0];
@@ -158,7 +166,7 @@ async function buscarPorUsuarioId(usuarioId) {
   const resultado = await pool.query(
     `SELECT ${CAMPOS_TAREFA}
      FROM tarefas
-     WHERE usuario_id = $1
+     WHERE criado_por_id = $1 OR usuario_id = $1
      ORDER BY projeto_id, ordem, id`,
     [usuarioId]
   );
@@ -169,7 +177,7 @@ async function contarTarefasEmAndamento(usuarioId, idIgnorado = null) {
   return contarEmAndamento(pool, usuarioId, idIgnorado);
 }
 
-async function adicionarTarefa(dados) {
+async function adicionarTarefa(dados, criadorId) {
   const client = await pool.connect();
   const coluna = normalizarStatus(dados.coluna || 'afazer');
   const usuarioId = dados.usuarioId;
@@ -186,17 +194,23 @@ async function adicionarTarefa(dados) {
     }
 
     const resultado = await client.query(
-      `INSERT INTO tarefas (texto, coluna, ordem, projeto_id, usuario_id)
-       SELECT $1, $2, $3, $4, $5
+      `INSERT INTO tarefas (
+         texto, coluna, ordem, projeto_id, usuario_id, criado_por_id, idprioridade
+       )
+       SELECT $1, $2, $3, $4, $5, $6, $7
        FROM projetos
-       WHERE id = $4 AND usuario_id = $5
+       WHERE id = $4 AND usuario_id = $6
+         AND EXISTS (SELECT 1 FROM usuarios WHERE id = $5)
+         AND EXISTS (SELECT 1 FROM prioridades WHERE id = $7)
        RETURNING ${CAMPOS_TAREFA}`,
       [
         dados.texto,
         coluna,
         dados.ordem ?? 0,
         projetoId,
-        usuarioId,
+        dados.usuarioId,
+        criadorId,
+        dados.idprioridade,
       ]
     );
 
@@ -233,7 +247,7 @@ async function atualizarTarefa(id, dadosNovos, usuarioId) {
       `SELECT ${CAMPOS_TAREFA},
               iniciada_em AS "iniciadaEm"
        FROM tarefas
-       WHERE id = $1 AND usuario_id = $2
+       WHERE id = $1 AND (criado_por_id = $2 OR usuario_id = $2)
        FOR UPDATE`,
       [id, usuarioId]
     );
@@ -244,29 +258,61 @@ async function atualizarTarefa(id, dadosNovos, usuarioId) {
     }
 
     const tarefaAtual = atual.rows[0];
+    if (Number(tarefaAtual.criadoPorId) !== Number(usuarioId) &&
+        atualizacoes.some(([campo]) => campo !== 'coluna')) {
+      await client.query('ROLLBACK');
+      const erro = new Error('Somente o criador pode alterar texto, projeto ou responsável');
+      erro.code = 'TASK_PERMISSION_DENIED';
+      throw erro;
+    }
+
     const colunaAtual = normalizarStatus(tarefaAtual.coluna);
     const atualizacoesMapeadas = atualizacoes.map(([campo, valor]) => [
       COLUNAS_ATUALIZAVEIS[campo],
       campo === 'coluna' ? normalizarStatus(valor) : valor,
     ]);
     const valoresPorColuna = Object.fromEntries(atualizacoesMapeadas);
-    const projetoId = valoresPorColuna.projeto_id ?? tarefaAtual.projetoId;
+    const projetoId = valoresPorColuna.projeto_id ?? tarefaAtual.projeto_id;
     const coluna = valoresPorColuna.coluna ?? colunaAtual;
+    const responsavelId = valoresPorColuna.usuario_id ?? tarefaAtual.usuario_id;
     const concluidoEm = valoresPorColuna.coluna === 'done' ? new Date() : null;
     const iniciadoEm = valoresPorColuna.coluna === 'doing' &&
       !tarefaAtual.iniciadaEm
       ? new Date()
       : tarefaAtual.iniciadaEm;
 
-    if (coluna === 'doing') {
-      await bloquearUsuario(client, usuarioId);
-      if (await contarEmAndamento(client, usuarioId, id) >= 2) {
+    if (coluna === 'doing' &&
+        (colunaAtual !== 'doing' || responsavelId !== tarefaAtual.usuario_id)) {
+      await bloquearUsuario(client, responsavelId);
+      if (await contarEmAndamento(client, responsavelId, id) >= 2) {
         throw criarErroLimiteAndamento();
       }
     }
 
-    if (projetoId !== tarefaAtual.projetoId) {
-      if (!await validarProjetoDoUsuario(client, projetoId, usuarioId)) {
+    if (projetoId !== tarefaAtual.projeto_id) {
+      if (!await validarProjetoDoUsuario(client, projetoId, Number(tarefaAtual.criadoPorId))) {
+        await client.query('ROLLBACK');
+        return null;
+      }
+    }
+
+    if (valoresPorColuna.usuario_id !== undefined) {
+      const usuarioExiste = await client.query(
+        'SELECT id FROM usuarios WHERE id = $1',
+        [responsavelId]
+      );
+      if (usuarioExiste.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return null;
+      }
+    }
+
+    if (valoresPorColuna.idprioridade !== undefined) {
+      const prioridadeExiste = await client.query(
+        'SELECT id FROM prioridades WHERE id = $1',
+        [valoresPorColuna.idprioridade]
+      );
+      if (prioridadeExiste.rowCount === 0) {
         await client.query('ROLLBACK');
         return null;
       }
@@ -290,7 +336,8 @@ async function atualizarTarefa(id, dadosNovos, usuarioId) {
     const resultado = await client.query(
       `UPDATE tarefas
        SET ${assignments.join(', ')}, atualizado_em = NOW()
-       WHERE id = $${valores.length} AND usuario_id = $${valores.length + 1}
+       WHERE id = $${valores.length}
+         AND (criado_por_id = $${valores.length + 1} OR usuario_id = $${valores.length + 1})
        RETURNING ${CAMPOS_TAREFA}`,
       [...valores, usuarioId]
     );
@@ -307,7 +354,7 @@ async function atualizarTarefa(id, dadosNovos, usuarioId) {
 
 async function deletarTarefa(id, usuarioId) {
   const resultado = await pool.query(
-    'DELETE FROM tarefas WHERE id = $1 AND usuario_id = $2 RETURNING id',
+    'DELETE FROM tarefas WHERE id = $1 AND criado_por_id = $2 RETURNING id',
     [id, usuarioId]
   );
   return resultado.rowCount > 0;

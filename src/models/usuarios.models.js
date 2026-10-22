@@ -104,22 +104,34 @@ async function autenticarUsuario(email, senha) {
 
 async function adicionarUsuario(dados) {
   const senhaHash = await gerarHashSenha(dados.senha);
+  const client = await pool.connect();
 
   try {
-    const resultado = await pool.query(
+    await client.query('BEGIN');
+    const resultado = await client.query(
       `INSERT INTO usuarios (nome, email, senha_hash)
        VALUES ($1, $2, $3)
        RETURNING ${CAMPOS_USUARIO}`,
       [dados.nome, dados.email, senhaHash]
     );
+
+    await client.query(
+      `INSERT INTO projetos (nome, descricao, usuario_id)
+       VALUES ($1, $2, $3)`,
+      ['Projeto Padrão', null, resultado.rows[0].id]
+    );
+    await client.query('COMMIT');
     return resultado.rows[0];
   } catch (erro) {
+    await client.query('ROLLBACK');
     if (erro.code === '23505') {
       const duplicado = new Error('Email já cadastrado');
       duplicado.code = 'USER_EMAIL_EXISTS';
       throw duplicado;
     }
     throw erro;
+  } finally {
+    client.release();
   }
 }
 

@@ -1,0 +1,112 @@
+{
+  "planHash": "af1c6af753243cc5e38b479caa7563a44284278efdcb56b8ca1daa4f33ef5a2e",
+  "phase": "standalone",
+  "recordedAtUtc": "2026-10-21T11:45:16.8172557Z",
+  "retryCount": 0,
+  "resetBaseline": false,
+  "complete": true,
+  "result": {
+    "setupSucceeded": true,
+    "setupDurationMs": 2486,
+    "setupFailureOutput": null,
+    "assertions": [
+      {
+        "name": "tests-pass",
+        "kind": "process",
+        "verificationMethod": "test-results",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": 0,
+        "outputSample": "\r\n\u003E taskflow_api@1.0.0 test\r\n\u003E node --test tests/auth.test.js\r\n\r\nTAP version 13\r\n# \u25C7 injected env (4) from .env // tip: \u2318 enable debugging { debug: true }\r\n# \u25C7 injected env (0) from .env // tip: \u25C8 secrets for agents [www.dotenvx.com]\r\n# [ERRO] GET /tarefas Token n\u00E3o informado\r\n# GET /tarefas 401 - 4ms\r\n# [ERRO] GET /projetos Token n\u00E3o informado\r\n# GET /projetos 401 - 1ms\r\n# [ERRO] GET /usuarios Token n\u00E3o informado\r\n# GET /usuarios 401 - 0ms\r\n# [ERRO] GET /prioridades Token n\u00E3o informado\r\n# GET /prioridades 401 - 1ms\r\n# [ERRO] GET /estatisticas Token n\u00E3o informado\r\n# GET /estatisticas 401 - 1ms\r\n# Subtest: rotas com dados de usu\u00E1rio exigem autentica\u00E7\u00E3o\r\nok 1 - rotas com dados de usu\u00E1rio exigem autentica\u00E7\u00E3o\r\n  ---\r\n  duration_ms: 29.0255\r\n  ...\r\n# [ERRO] GET /tarefas/abc Dados inv\u00E1lidos\r\n# GET /tarefas/abc 400 - 0ms\r\n# [ERRO] GET /tarefas?projetoId=abc Dados inv\u00E1lidos\r\n# GET /tarefas?projetoId=abc 400 - 0ms\r\n# Subtest: params e filtros inv\u00E1lidos retornam 400 com detalhes estruturados\r\nok 2 - params e filtros inv\u00E1lidos retornam 400 com detalhes estruturados\r\n  ---\r\n  duration_ms: 5.7938\r\n  ...\r\n# [ERRO] GET /rota-invalida Rota GET /rota-invalida n\u00E3o encontrada\r\n# GET /rota-invalida 404 - 0ms\r\n# Subtest: rotas inexistentes retornam 404 com m\u00E9todo e caminho\r\nok 3 - rotas inexistentes retornam 404 com m\u00E9todo e caminho\r\n  ---\r\n  duration_ms: 4.1326\r\n  ...\r\n# POST /auth/login 200 - 43ms\r\n# Subtest: cadastro e login persistem usu\u00E1rios no PostgreSQL com senha protegida\r\nok 4 - cadastro e login persistem usu\u00E1rios no PostgreSQL com senha protegida\r\n  ---\r\n  duration_ms: 96.9889\r\n  ...\r\n# Subtest: projetos consultam e alteram somente registros do usu\u00E1rio autenticado\r\nok 5 - projetos consultam e alteram somente registros do usu\u00E1rio autenticado\r\n  ---\r\n  duration_ms: 0.6334\r\n  ...\r\n# Subtest: tarefas filtram por criador ou respons\u00E1vel e usam os nomes de coluna do Neon\r\nok 6 - tarefas filtram por criador ou respons\u00E1vel e usam os nomes de coluna do Neon\r\n  ---\r\n  duration_ms: 1.14\r\n  ...\r\n# Subtest: tarefas chamam fun\u00E7\u00F5es e procedure com par\u00E2metros e ownership verificado\r\nok 7 - tarefas chamam fun\u00E7\u00F5es e procedure com par\u00E2metros e ownership verificado\r\n  ---\r\n  duration_ms: 0.9502\r\n  ...\r\n# Subtest: atualizar tarefa grava timestamps de in\u00EDcio e conclus\u00E3o com ownership\r\nok 8 - atualizar tarefa grava timestamps de in\u00EDcio e conclus\u00E3o com ownership\r\n  ---\r\n  duration_ms: 0.8104\r\n  ...\r\n1..8\r\n# tests 8\r\n# suites 0\r\n# pass 8\r\n# fail 0\r\n# cancelled 0\r\n# skipped 0\r\n# todo 0\r\n# duration_ms 385.8151\r\n",
+        "durationMs": 816,
+        "testResults": {
+          "testFramework": "unknown",
+          "runnerDetectedFrom": "none",
+          "testsTotal": 0,
+          "testsPassed": 0,
+          "testsFailed": 0,
+          "testsSkipped": 0,
+          "parseFailed": true
+        }
+      },
+      {
+        "name": "api-root-200",
+        "kind": "http-probe",
+        "verificationMethod": "http-status",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": null,
+        "outputSample": "HTTP 200\n{\u0022mensagem\u0022:\u0022TaskFlow API funcionando com MVC!\u0022}\n--- server output ---\n\r\n\u003E taskflow_api@1.0.0 start\r\n\u003E node src/server.js\r\n\r\n\u25C7 injected env (3) from .env // tip: \u25C8 secrets for agents [www.dotenvx.com]\r\n\u25C7 injected env (0) from .env // tip: \u2301 auth for agents [www.vestauth.com]\r\n\u25C7 injected env (0) from .env // tip: \u2318 custom filepath { path: \u0027/custom/path/.env\u0027 }\r\n(node:153508) Warning: SECURITY WARNING: The SSL modes \u0027prefer\u0027, \u0027require\u0027, and \u0027verify-ca\u0027 are treated as aliases for \u0027verify-full\u0027.\r\nIn the next major version (pg-connection-string v3.0.0 and pg v9.0.0), these modes will adopt standard libpq semantics, which have weaker security guarantees.\r\n\r\nTo prepare for this change:\r\n- If you want the current behavior, explicitly use \u0027sslmode=verify-full\u0027\r\n- If you want libpq compatibility now, use \u0027uselibpqcompat=true\u0026sslmode=require\u0027\r\n\r\nSee https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode definitions.\r\n(Use \u0060node --trace-warnings ...\u0060 to show where the warning was created)\r\nServidor MVC rodando na porta 3201\r\nGET / 200 - 3ms\r\n",
+        "durationMs": 1038
+      },
+      {
+        "name": "priorities-require-auth",
+        "kind": "http-probe",
+        "verificationMethod": "http-status",
+        "passed": true,
+        "timedOut": false,
+        "skipped": false,
+        "skippedReason": null,
+        "exitCode": null,
+        "outputSample": "HTTP 401\n{\u0022erro\u0022:{\u0022mensagem\u0022:\u0022Token n\u00E3o informado\u0022}}",
+        "durationMs": 5
+      }
+    ],
+    "executions": [
+      {
+        "source": "setup[0]",
+        "resolvedExecutable": "C:\\Program Files\\nodejs\\npm.CMD",
+        "args": [
+          "ci"
+        ],
+        "cwd": "C:\\Users\\alunoctg\\paulo\\taskflow\\taskflow_api",
+        "env": {},
+        "prependPath": [],
+        "platform": "win32"
+      },
+      {
+        "source": "tests-pass",
+        "resolvedExecutable": "C:\\Program Files\\nodejs\\npm.CMD",
+        "args": [
+          "test"
+        ],
+        "cwd": "C:\\Users\\alunoctg\\paulo\\taskflow\\taskflow_api",
+        "env": {},
+        "prependPath": [],
+        "platform": "win32"
+      },
+      {
+        "source": "api-root-200",
+        "resolvedExecutable": "C:\\Program Files\\nodejs\\npm.CMD",
+        "args": [
+          "run",
+          "start"
+        ],
+        "cwd": "C:\\Users\\alunoctg\\paulo\\taskflow\\taskflow_api",
+        "env": {
+          "PORT": "3201"
+        },
+        "prependPath": [],
+        "platform": "win32"
+      },
+      {
+        "source": "priorities-require-auth",
+        "resolvedExecutable": "C:\\Program Files\\nodejs\\npm.CMD",
+        "args": [
+          "run",
+          "start"
+        ],
+        "cwd": "C:\\Users\\alunoctg\\paulo\\taskflow\\taskflow_api",
+        "env": {
+          "PORT": "3201"
+        },
+        "prependPath": [],
+        "platform": "win32"
+      }
+    ]
+  }
+}

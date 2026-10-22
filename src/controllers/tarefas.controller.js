@@ -1,4 +1,6 @@
 const tarefaModel = require('../models/tarefas.models');
+const usuarioModel = require('../models/usuarios.models');
+const prioridadesModel = require('../models/prioridades.models');
 const criarErro = require('../utils/criarErro');
 
 const colunasValidas = ['afazer', 'andamento', 'concluido'];
@@ -98,11 +100,14 @@ async function avancar(req, res) {
 
 async function criar(req, res) {
   const corpo = req.body || {};
-  const { texto, projetoId, ordem, coluna } = corpo;
+  const { texto, ordem, coluna } = corpo;
+  const projetoId = corpo.projeto_id ?? corpo.projetoId;
+  const responsavelId = corpo.usuario_id ?? req.usuario.id;
+  const idprioridade = corpo.idprioridade ?? 2;
   const colunaNormalizada = normalizarColuna(coluna);
-  const usuarioId = req.usuario?.id;
+  const criadorId = req.usuario?.id;
 
-  if (!usuarioId) {
+  if (!criadorId) {
     throw criarErro(401, 'Usuário não autenticado');
   }
 
@@ -116,7 +121,24 @@ async function criar(req, res) {
   }
 
   if (!Number.isInteger(Number(projetoId)) || Number(projetoId) <= 0) {
-    throw criarErro(400, 'O campo projetoId é obrigatório e deve ser um número inteiro positivo');
+    throw criarErro(400, 'O campo projeto_id é obrigatório e deve ser um número inteiro positivo');
+  }
+
+  if (!Number.isInteger(Number(responsavelId)) || Number(responsavelId) <= 0) {
+    throw criarErro(400, 'O campo usuario_id deve ser um número inteiro positivo');
+  }
+
+  if (!Number.isInteger(Number(idprioridade)) || Number(idprioridade) <= 0) {
+    throw criarErro(400, 'O campo idprioridade deve ser um número inteiro positivo');
+  }
+
+  const responsavelExiste = await usuarioModel.buscarUsuarioPorId(responsavelId);
+  if (!responsavelExiste) {
+    throw criarErro(400, 'O responsável selecionado não existe');
+  }
+
+  if (!await prioridadesModel.existePrioridade(Number(idprioridade))) {
+    throw criarErro(400, 'A prioridade selecionada não existe');
   }
 
   if (colunaNormalizada !== undefined && !colunasValidas.includes(colunaNormalizada)) {
@@ -128,7 +150,7 @@ async function criar(req, res) {
   }
 
   if (colunaNormalizada === 'andamento') {
-    const quantidade = await tarefaModel.contarTarefasEmAndamento(usuarioId);
+    const quantidade = await tarefaModel.contarTarefasEmAndamento(responsavelId);
 
     if (quantidade >= 2) {
       throw criarErro(400, 'Limite de 2 tarefas em andamento por usuário atingido');
@@ -140,13 +162,14 @@ async function criar(req, res) {
     coluna: colunaNormalizada,
     ordem: ordem ?? 0,
     projetoId: Number(projetoId),
-    usuarioId,
+    usuarioId: Number(responsavelId),
+    idprioridade: Number(idprioridade),
   };
 
   try {
-    const novaTarefa = await tarefaModel.adicionarTarefa(dadosParaSalvar);
+    const novaTarefa = await tarefaModel.adicionarTarefa(dadosParaSalvar, criadorId);
     if (!novaTarefa) {
-      throw criarErro(404, 'Projeto não encontrado para este usuário');
+      throw criarErro(404, 'Projeto não encontrado para este criador');
     }
     return res.status(201).json(novaTarefa);
   } catch (erro) {
@@ -157,7 +180,7 @@ async function criar(req, res) {
 async function atualizar(req, res) {
   const { id } = req.params;
   const corpo = req.body || {};
-  const { coluna, projetoId, ordem } = corpo;
+  const { coluna, ordem } = corpo;
   const colunaNormalizada = normalizarColuna(coluna);
   const dadosAtualizados = {};
   const usuarioId = req.usuario?.id;
@@ -182,18 +205,33 @@ async function atualizar(req, res) {
     dadosAtualizados.texto = corpo.texto;
   }
 
+  const projetoId = corpo.projeto_id ?? corpo.projetoId;
+  if (projetoId !== undefined) {
+    if (!Number.isInteger(Number(projetoId)) || Number(projetoId) <= 0) {
+      throw criarErro(400, 'O campo projeto_id deve ser um número inteiro positivo');
+    }
+    dadosAtualizados.projetoId = Number(projetoId);
+  }
+
+  if (corpo.usuario_id !== undefined) {
+    if (!Number.isInteger(Number(corpo.usuario_id)) || Number(corpo.usuario_id) <= 0) {
+      throw criarErro(400, 'O campo usuario_id deve ser um número inteiro positivo');
+    }
+    dadosAtualizados.usuarioId = Number(corpo.usuario_id);
+  }
+
+  if (corpo.idprioridade !== undefined) {
+    if (!Number.isInteger(Number(corpo.idprioridade)) || Number(corpo.idprioridade) <= 0) {
+      throw criarErro(400, 'O campo idprioridade deve ser um número inteiro positivo');
+    }
+    dadosAtualizados.idprioridade = Number(corpo.idprioridade);
+  }
+
   if (ordem !== undefined) {
     if (!Number.isInteger(ordem)) {
       throw criarErro(400, 'O campo ordem deve ser um número inteiro');
     }
     dadosAtualizados.ordem = ordem;
-  }
-
-  if (projetoId !== undefined) {
-    if (!Number.isInteger(Number(projetoId)) || Number(projetoId) <= 0) {
-      throw criarErro(400, 'O campo projetoId deve ser um número inteiro positivo');
-    }
-    dadosAtualizados.projetoId = Number(projetoId);
   }
 
   if (colunaNormalizada !== undefined) {
@@ -209,15 +247,6 @@ async function atualizar(req, res) {
     throw criarErro(404, 'Recurso não encontrado');
   }
 
-  const colunaFinal = colunaNormalizada || tarefaAtual.coluna;
-  if (colunaFinal === 'andamento') {
-    const quantidade = await tarefaModel.contarTarefasEmAndamento(usuarioId, id);
-
-    if (quantidade >= 2) {
-      throw criarErro(400, 'Limite de 2 tarefas em andamento por usuário atingido');
-    }
-  }
-
   try {
     const tarefaAtualizada = await tarefaModel.atualizarTarefa(
       id,
@@ -231,6 +260,9 @@ async function atualizar(req, res) {
 
     return res.json(tarefaAtualizada);
   } catch (erro) {
+    if (erro.code === 'TASK_PERMISSION_DENIED') {
+      throw criarErro(403, erro.message);
+    }
     return traduzirErroDoModel(erro);
   }
 }

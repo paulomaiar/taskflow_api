@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
+const jwt = require('jsonwebtoken');
 const pool = require('../src/database/db');
 const app = require('../src/app');
 const usuarioModel = require('../src/models/usuarios.models');
@@ -8,7 +9,7 @@ const projetoModel = require('../src/models/projeto.model');
 const tarefaModel = require('../src/models/tarefas.models');
 
 test('rotas com dados de usuário exigem autenticação', async () => {
-  for (const path of ['/tarefas', '/projetos', '/estatisticas']) {
+  for (const path of ['/tarefas', '/projetos', '/usuarios', '/prioridades', '/estatisticas']) {
     const resposta = await request(app).get(path);
     assert.equal(resposta.status, 401, path);
   }
@@ -49,27 +50,44 @@ test('rotas inexistentes retornam 404 com método e caminho', async () => {
 
 test('cadastro e login persistem usuários no PostgreSQL com senha protegida', async t => {
   const queryOriginal = pool.query;
+  const connectOriginal = pool.connect;
   let usuarioCriado;
   let hashAtualizado;
+  let projetoPadraoCriado = false;
 
   t.after(() => {
     pool.query = queryOriginal;
+    pool.connect = connectOriginal;
+  });
+
+  pool.connect = async () => ({
+    query: async (sql, valores = []) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') {
+        return { rows: [], rowCount: 0 };
+      }
+      if (sql.includes('INSERT INTO usuarios')) {
+        usuarioCriado = {
+          id: 27,
+          nome: valores[0],
+          email: valores[1],
+          criadoEm: null,
+          atualizadoEm: null,
+        };
+        assert.notEqual(valores[2], 'senha-de-teste');
+        assert.match(valores[2], /^scrypt\$/);
+        return { rows: [usuarioCriado], rowCount: 1 };
+      }
+      if (sql.includes('INSERT INTO projetos')) {
+        assert.deepEqual(valores, ['Projeto Padrão', null, usuarioCriado.id]);
+        projetoPadraoCriado = true;
+        return { rows: [], rowCount: 1 };
+      }
+      throw new Error(`Consulta inesperada no teste: ${sql}`);
+    },
+    release() {},
   });
 
   pool.query = async (sql, valores = []) => {
-    if (sql.includes('INSERT INTO usuarios')) {
-      usuarioCriado = {
-        id: 27,
-        nome: valores[0],
-        email: valores[1],
-        criadoEm: null,
-        atualizadoEm: null,
-      };
-      assert.notEqual(valores[2], 'senha-de-teste');
-      assert.match(valores[2], /^scrypt\$/);
-      return { rows: [usuarioCriado], rowCount: 1 };
-    }
-
     if (sql.includes('SELECT id, nome, email, senha_hash')) {
       return {
         rows: [{
@@ -95,6 +113,7 @@ test('cadastro e login persistem usuários no PostgreSQL com senha protegida', a
     senha: 'senha-de-teste',
   });
   assert.equal(criado.id, 27);
+  assert.equal(projetoPadraoCriado, true);
   assert.equal(Object.hasOwn(criado, 'senha_hash'), false);
 
   const login = await request(app)
@@ -138,7 +157,39 @@ test('projetos consultam e alteram somente registros do usuário autenticado', a
   assert.deepEqual(chamadas[4].valores, [8, 27]);
 });
 
-test('tarefas filtram pelo dono e usam os nomes de coluna do Neon', async t => {
+test('POST /projetos usa o usuário do JWT e retorna o projeto criado', async t => {
+  const queryOriginal = pool.query;
+  const usuarioId = 27;
+  const projetoCriado = {
+    id: 8,
+    nome: 'Projeto novo',
+    descricao: 'Descrição',
+    usuario_id: usuarioId,
+    criadoEm: null,
+    atualizadoEm: null,
+  };
+
+  t.after(() => {
+    pool.query = queryOriginal;
+  });
+
+  pool.query = async (sql, valores = []) => {
+    assert.match(sql, /INSERT INTO projetos/);
+    assert.deepEqual(valores, ['Projeto novo', 'Descrição', usuarioId]);
+    return { rows: [projetoCriado], rowCount: 1 };
+  };
+
+  const token = jwt.sign({ id: usuarioId }, process.env.JWT_SECRET);
+  const resposta = await request(app)
+    .post('/projetos')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ nome: 'Projeto novo', descricao: 'Descrição' });
+
+  assert.equal(resposta.status, 201);
+  assert.deepEqual(resposta.body, projetoCriado);
+});
+
+test('tarefas filtram por criador ou responsável e usam os nomes de coluna do Neon', async t => {
   const queryOriginal = pool.query;
   const chamadas = [];
   t.after(() => {
@@ -174,7 +225,7 @@ test('tarefas filtram pelo dono e usam os nomes de coluna do Neon', async t => {
   assert.deepEqual(chamadas[2].valores, [27, 3]);
   assert.match(chamadas[2].sql, /coluna = 'doing'/);
   assert.deepEqual(chamadas[3].valores, [3, 27]);
-  assert.match(chamadas[3].sql, /usuario_id = \$2/);
+  assert.match(chamadas[3].sql, /criado_por_id = \$2/);
 });
 
 test('tarefas chamam funções e procedure com parâmetros e ownership verificado', async t => {
@@ -250,8 +301,11 @@ test('atualizar tarefa grava timestamps de início e conclusão com ownership', 
     texto: 'Tarefa',
     coluna: 'afazer',
     ordem: 1,
+    projeto_id: 8,
     projetoId: 8,
+    usuario_id: 27,
     usuarioId: 27,
+    criadoPorId: 27,
     iniciadaEm: null,
   };
   await tarefaModel.atualizarTarefa(3, { coluna: 'andamento' }, 27);
@@ -261,7 +315,7 @@ test('atualizar tarefa grava timestamps de início e conclusão com ownership', 
   assert.ok(updates[0].valores[2] instanceof Date);
   assert.deepEqual(updates[0].valores.slice(3), [3, 27]);
   assert.match(updates[0].sql, /concluido_em = \$2, iniciada_em = \$3/);
-  assert.match(updates[0].sql, /WHERE id = \$4 AND usuario_id = \$5/);
+  assert.match(updates[0].sql, /WHERE id = \$4\s+AND \(criado_por_id = \$5 OR usuario_id = \$5\)/);
 
   const iniciadaEm = new Date('2026-01-01T12:00:00.000Z');
   tarefaAtual = { ...tarefaAtual, coluna: 'andamento', iniciadaEm };
