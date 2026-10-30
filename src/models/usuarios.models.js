@@ -1,17 +1,35 @@
 const crypto = require('crypto');
 const { promisify } = require('util');
-const pool = require('../database/db');
+const prisma = require('../database/prisma');
 
 const scrypt = promisify(crypto.scrypt);
 const TAMANHO_HASH = 64;
+const CAMPOS_PUBLICOS = {
+  id: true,
+  nome: true,
+  email: true,
+  criado_em: true,
+  atualizado_em: true,
+};
 
-const CAMPOS_USUARIO = `
-  id,
-  nome,
-  email,
-  criado_em AS "criadoEm",
-  atualizado_em AS "atualizadoEm"
-`;
+function formatarUsuario(usuario) {
+  if (!usuario) return null;
+
+  const { criado_em, atualizado_em, senha_hash, ...resto } = usuario;
+  return {
+    ...resto,
+    criadoEm: criado_em,
+    atualizadoEm: atualizado_em,
+  };
+}
+
+function criarErroEmailDuplicado(erro) {
+  if (erro.code !== 'P2002') return erro;
+
+  const duplicado = new Error('Email já cadastrado');
+  duplicado.code = 'USER_EMAIL_EXISTS';
+  return duplicado;
+}
 
 async function gerarHashSenha(senha) {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -39,49 +57,44 @@ async function verificarSenha(senha, senhaHash) {
     };
   }
 
-  {
-    const senhaBuffer = Buffer.from(String(senha));
-    const hashBuffer = Buffer.from(String(senhaHash));
+  const senhaBuffer = Buffer.from(String(senha));
+  const hashBuffer = Buffer.from(String(senhaHash));
 
-    if (senhaBuffer.length !== hashBuffer.length) {
-      return { valida: false, precisaAtualizarHash: false };
-    }
-
-    return {
-      valida: crypto.timingSafeEqual(senhaBuffer, hashBuffer),
-      precisaAtualizarHash: true,
-    };
+  if (senhaBuffer.length !== hashBuffer.length) {
+    return { valida: false, precisaAtualizarHash: false };
   }
+
+  return {
+    valida: crypto.timingSafeEqual(senhaBuffer, hashBuffer),
+    precisaAtualizarHash: true,
+  };
 }
 
 async function listarUsuarios() {
-  const resultado = await pool.query(
-    `SELECT ${CAMPOS_USUARIO} FROM usuarios ORDER BY id`
-  );
-  return resultado.rows;
+  const usuarios = await prisma.usuarios.findMany({
+    select: CAMPOS_PUBLICOS,
+    orderBy: { id: 'asc' },
+  });
+  return usuarios.map(formatarUsuario);
 }
 
 async function buscarUsuarioPorId(id) {
-  const resultado = await pool.query(
-    `SELECT ${CAMPOS_USUARIO} FROM usuarios WHERE id = $1`,
-    [id]
-  );
-  return resultado.rows[0];
+  const usuario = await prisma.usuarios.findUnique({
+    where: { id: Number(id) },
+    select: CAMPOS_PUBLICOS,
+  });
+  return formatarUsuario(usuario);
 }
 
 async function buscarUsuarioPorEmail(email) {
-  const resultado = await pool.query(
-    `SELECT id, nome, email, senha_hash
-     FROM usuarios
-     WHERE email = $1`,
-    [email]
-  );
-  return resultado.rows[0];
+  return prisma.usuarios.findUnique({
+    where: { email },
+    select: { id: true, nome: true, email: true, senha_hash: true },
+  });
 }
 
 async function autenticarUsuario(email, senha) {
   const usuario = await buscarUsuarioPorEmail(email);
-
   if (!usuario) return null;
 
   const verificacao = await verificarSenha(senha, usuario.senha_hash);
@@ -89,10 +102,10 @@ async function autenticarUsuario(email, senha) {
 
   if (verificacao.precisaAtualizarHash) {
     const senhaHash = await gerarHashSenha(senha);
-    await pool.query(
-      'UPDATE usuarios SET senha_hash = $1, atualizado_em = NOW() WHERE id = $2',
-      [senhaHash, usuario.id]
-    );
+    await prisma.usuarios.update({
+      where: { id: usuario.id },
+      data: { senha_hash: senhaHash },
+    });
   }
 
   return {
@@ -104,86 +117,69 @@ async function autenticarUsuario(email, senha) {
 
 async function adicionarUsuario(dados) {
   const senhaHash = await gerarHashSenha(dados.senha);
-  const client = await pool.connect();
 
   try {
-    await client.query('BEGIN');
-    const resultado = await client.query(
-      `INSERT INTO usuarios (nome, email, senha_hash)
-       VALUES ($1, $2, $3)
-       RETURNING ${CAMPOS_USUARIO}`,
-      [dados.nome, dados.email, senhaHash]
-    );
+    return await prisma.$transaction(async tx => {
+      const usuario = await tx.usuarios.create({
+        data: {
+          nome: dados.nome,
+          email: dados.email,
+          senha_hash: senhaHash,
+        },
+        select: CAMPOS_PUBLICOS,
+      });
 
-    await client.query(
-      `INSERT INTO projetos (nome, descricao, usuario_id)
-       VALUES ($1, $2, $3)`,
-      ['Projeto Padrão', null, resultado.rows[0].id]
-    );
-    await client.query('COMMIT');
-    return resultado.rows[0];
+      await tx.projetos.create({
+        data: {
+          nome: 'Projeto Padrão',
+          descricao: null,
+          usuarios: { connect: { id: usuario.id } },
+        },
+      });
+
+      return formatarUsuario(usuario);
+    });
   } catch (erro) {
-    await client.query('ROLLBACK');
-    if (erro.code === '23505') {
-      const duplicado = new Error('Email já cadastrado');
-      duplicado.code = 'USER_EMAIL_EXISTS';
-      throw duplicado;
-    }
-    throw erro;
-  } finally {
-    client.release();
+    throw criarErroEmailDuplicado(erro);
   }
 }
 
 async function atualizarUsuario(id, dadosNovos) {
-  const campos = [];
-  const valores = [];
-
-  if (dadosNovos.nome !== undefined) {
-    valores.push(dadosNovos.nome);
-    campos.push(`nome = $${valores.length}`);
-  }
-
-  if (dadosNovos.email !== undefined) {
-    valores.push(dadosNovos.email);
-    campos.push(`email = $${valores.length}`);
-  }
-
+  const dados = {};
+  if (dadosNovos.nome !== undefined) dados.nome = dadosNovos.nome;
+  if (dadosNovos.email !== undefined) dados.email = dadosNovos.email;
   if (dadosNovos.senha !== undefined) {
-    valores.push(await gerarHashSenha(dadosNovos.senha));
-    campos.push(`senha_hash = $${valores.length}`);
+    dados.senha_hash = await gerarHashSenha(dadosNovos.senha);
   }
 
-  if (campos.length === 0) {
+  if (Object.keys(dados).length === 0) {
     return buscarUsuarioPorId(id);
   }
 
-  valores.push(id);
   try {
-    const resultado = await pool.query(
-      `UPDATE usuarios
-       SET ${campos.join(', ')}, atualizado_em = NOW()
-       WHERE id = $${valores.length}
-       RETURNING ${CAMPOS_USUARIO}`,
-      valores
-    );
-    return resultado.rows[0] || null;
+    return await prisma.$transaction(async tx => {
+      const resultado = await tx.usuarios.updateMany({
+        where: { id: Number(id) },
+        data: dados,
+      });
+      if (resultado.count === 0) return null;
+
+      const usuario = await tx.usuarios.findUnique({
+        where: { id: Number(id) },
+        select: CAMPOS_PUBLICOS,
+      });
+      return formatarUsuario(usuario);
+    });
   } catch (erro) {
-    if (erro.code === '23505') {
-      const duplicado = new Error('Email já cadastrado');
-      duplicado.code = 'USER_EMAIL_EXISTS';
-      throw duplicado;
-    }
-    throw erro;
+    throw criarErroEmailDuplicado(erro);
   }
 }
 
 async function deletarUsuario(id) {
-  const resultado = await pool.query(
-    'DELETE FROM usuarios WHERE id = $1 RETURNING id',
-    [id]
-  );
-  return resultado.rowCount > 0;
+  const resultado = await prisma.usuarios.deleteMany({
+    where: { id: Number(id) },
+  });
+  return resultado.count > 0;
 }
 
 module.exports = {
@@ -194,5 +190,5 @@ module.exports = {
   autenticarUsuario,
   adicionarUsuario,
   atualizarUsuario,
-  deletarUsuario
+  deletarUsuario,
 };

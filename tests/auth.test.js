@@ -2,11 +2,24 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
-const pool = require('../src/database/db');
+const prisma = require('../src/database/prisma');
 const app = require('../src/app');
 const usuarioModel = require('../src/models/usuarios.models');
 const projetoModel = require('../src/models/projeto.model');
 const tarefaModel = require('../src/models/tarefas.models');
+const prioridadesModel = require('../src/models/prioridades.models');
+
+function stub(t, alvo, metodo, implementacao) {
+  const original = alvo[metodo];
+  alvo[metodo] = implementacao;
+  t.after(() => {
+    alvo[metodo] = original;
+  });
+}
+
+function tokenPara(usuarioId) {
+  return jwt.sign({ id: usuarioId }, process.env.JWT_SECRET);
+}
 
 test('rotas com dados de usuário exigem autenticação', async () => {
   for (const path of ['/tarefas', '/projetos', '/usuarios', '/prioridades', '/estatisticas']) {
@@ -15,13 +28,19 @@ test('rotas com dados de usuário exigem autenticação', async () => {
   }
 });
 
-test('params e filtros inválidos retornam 400 com detalhes estruturados', async () => {
+test('documentação OpenAPI fica disponível sem autenticação', async () => {
+  const resposta = await request(app).get('/docs/');
+  assert.equal(resposta.status, 200);
+  assert.match(resposta.text, /swagger-ui-init\.js/);
+});
+
+test('params e filtros inválidos retornam 400 com detalhes textuais', async () => {
   const respostaId = await request(app).get('/tarefas/abc');
   assert.equal(respostaId.status, 400);
   assert.deepEqual(respostaId.body, {
     erro: {
       mensagem: 'Dados inválidos',
-      detalhes: [{ campo: 'id', mensagem: 'deve ser um número inteiro positivo' }],
+      detalhes: ['id deve ser um número inteiro positivo'],
     },
   });
 
@@ -30,10 +49,7 @@ test('params e filtros inválidos retornam 400 com detalhes estruturados', async
   assert.deepEqual(respostaFiltro.body, {
     erro: {
       mensagem: 'Dados inválidos',
-      detalhes: [{
-        campo: 'projetoId',
-        mensagem: 'deve ser um número inteiro positivo',
-      }],
+      detalhes: ['projetoId deve ser um número inteiro positivo'],
     },
   });
 });
@@ -48,281 +64,274 @@ test('rotas inexistentes retornam 404 com método e caminho', async () => {
   });
 });
 
-test('cadastro e login persistem usuários no PostgreSQL com senha protegida', async t => {
-  const queryOriginal = pool.query;
-  const connectOriginal = pool.connect;
-  let usuarioCriado;
-  let hashAtualizado;
-  let projetoPadraoCriado = false;
-
-  t.after(() => {
-    pool.query = queryOriginal;
-    pool.connect = connectOriginal;
-  });
-
-  pool.connect = async () => ({
-    query: async (sql, valores = []) => {
-      if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') {
-        return { rows: [], rowCount: 0 };
-      }
-      if (sql.includes('INSERT INTO usuarios')) {
-        usuarioCriado = {
-          id: 27,
-          nome: valores[0],
-          email: valores[1],
-          criadoEm: null,
-          atualizadoEm: null,
-        };
-        assert.notEqual(valores[2], 'senha-de-teste');
-        assert.match(valores[2], /^scrypt\$/);
-        return { rows: [usuarioCriado], rowCount: 1 };
-      }
-      if (sql.includes('INSERT INTO projetos')) {
-        assert.deepEqual(valores, ['Projeto Padrão', null, usuarioCriado.id]);
-        projetoPadraoCriado = true;
-        return { rows: [], rowCount: 1 };
-      }
-      throw new Error(`Consulta inesperada no teste: ${sql}`);
-    },
-    release() {},
-  });
-
-  pool.query = async (sql, valores = []) => {
-    if (sql.includes('SELECT id, nome, email, senha_hash')) {
-      return {
-        rows: [{
-          ...usuarioCriado,
-          senha_hash: hashAtualizado || 'senha-de-teste',
-        }],
-        rowCount: 1,
-      };
-    }
-
-    if (sql.includes('UPDATE usuarios SET senha_hash')) {
-      hashAtualizado = valores[0];
-      assert.match(hashAtualizado, /^scrypt\$/);
-      return { rows: [], rowCount: 1 };
-    }
-
-    throw new Error(`Consulta inesperada no teste: ${sql}`);
-  };
-
-  const criado = await usuarioModel.adicionarUsuario({
+test('cadastro e login usam Prisma, criam projeto padrão e nunca retornam hash', async t => {
+  const usuarioCriado = {
+    id: 27,
     nome: 'Usuário de teste',
     email: 'teste@example.invalid',
-    senha: 'senha-de-teste',
+    criado_em: null,
+    atualizado_em: null,
+  };
+  let hashSalvo;
+  let projetoPadraoCriado = false;
+
+  stub(t, prisma, '$transaction', callback => callback(prisma));
+  stub(t, prisma.usuarios, 'create', async args => {
+    hashSalvo = args.data.senha_hash;
+    assert.match(hashSalvo, /^scrypt\$/);
+    return usuarioCriado;
   });
-  assert.equal(criado.id, 27);
+  stub(t, prisma.projetos, 'create', async args => {
+    assert.equal(args.data.nome, 'Projeto Padrão');
+    assert.deepEqual(args.data.usuarios, { connect: { id: 27 } });
+    projetoPadraoCriado = true;
+    return {};
+  });
+  stub(t, prisma.usuarios, 'findUnique', async () => ({
+    ...usuarioCriado,
+    senha_hash: hashSalvo,
+  }));
+
+  const cadastro = await request(app)
+    .post('/usuarios')
+    .send({
+      nome: usuarioCriado.nome,
+      email: usuarioCriado.email,
+      senha: 'senha-de-teste',
+    });
+
+  assert.equal(cadastro.status, 201);
   assert.equal(projetoPadraoCriado, true);
-  assert.equal(Object.hasOwn(criado, 'senha_hash'), false);
+  assert.equal(Object.hasOwn(cadastro.body, 'senha_hash'), false);
 
   const login = await request(app)
     .post('/auth/login')
-    .send({ email: 'teste@example.invalid', senha: 'senha-de-teste' });
+    .send({ email: usuarioCriado.email, senha: 'senha-de-teste' });
   assert.equal(login.status, 200);
   assert.ok(login.body.token);
   assert.deepEqual(login.body.usuario, {
     id: 27,
-    nome: 'Usuário de teste',
-    email: 'teste@example.invalid',
+    nome: usuarioCriado.nome,
+    email: usuarioCriado.email,
   });
-  assert.match(hashAtualizado, /^scrypt\$/);
 });
 
-test('projetos consultam e alteram somente registros do usuário autenticado', async t => {
-  const queryOriginal = pool.query;
-  const chamadas = [];
-  t.after(() => {
-    pool.query = queryOriginal;
-  });
-
-  pool.query = async (sql, valores = []) => {
-    chamadas.push({ sql, valores });
-    return { rows: [{ id: 8, nome: 'Projeto', descricao: null }], rowCount: 1 };
-  };
-
-  await projetoModel.listarProjetos(27);
-  await projetoModel.buscarProjetoPorId(8, 27);
-  await projetoModel.adicionarProjeto({ nome: 'Projeto' }, 27);
-  await projetoModel.atualizarProjeto(8, { nome: 'Novo nome' }, 27);
-  await projetoModel.deletarProjeto(8, 27);
-
-  assert.equal(chamadas.length, 5);
-  assert.deepEqual(chamadas[0].valores, [27]);
-  assert.match(chamadas[0].sql, /WHERE usuario_id = \$1/);
-  assert.deepEqual(chamadas[1].valores, [8, 27]);
-  assert.match(chamadas[1].sql, /id = \$1 AND usuario_id = \$2/);
-  assert.deepEqual(chamadas[2].valores, ['Projeto', null, 27]);
-  assert.deepEqual(chamadas[3].valores, ['Novo nome', 8, 27]);
-  assert.deepEqual(chamadas[4].valores, [8, 27]);
-});
-
-test('POST /projetos usa o usuário do JWT e retorna o projeto criado', async t => {
-  const queryOriginal = pool.query;
-  const usuarioId = 27;
-  const projetoCriado = {
+test('projetos mantêm o escopo do usuário e os nomes de data da API', async t => {
+  const criado = {
     id: 8,
     nome: 'Projeto novo',
     descricao: 'Descrição',
-    usuario_id: usuarioId,
-    criadoEm: null,
-    atualizadoEm: null,
+    usuario_id: 27,
+    criado_em: null,
+    atualizado_em: null,
   };
 
-  t.after(() => {
-    pool.query = queryOriginal;
+  stub(t, prisma.projetos, 'create', async args => {
+    assert.deepEqual(args.data, {
+      nome: 'Projeto novo',
+      descricao: 'Descrição',
+      usuarios: { connect: { id: 27 } },
+    });
+    return criado;
   });
 
-  pool.query = async (sql, valores = []) => {
-    assert.match(sql, /INSERT INTO projetos/);
-    assert.deepEqual(valores, ['Projeto novo', 'Descrição', usuarioId]);
-    return { rows: [projetoCriado], rowCount: 1 };
-  };
-
-  const token = jwt.sign({ id: usuarioId }, process.env.JWT_SECRET);
   const resposta = await request(app)
     .post('/projetos')
-    .set('Authorization', `Bearer ${token}`)
+    .set('Authorization', `Bearer ${tokenPara(27)}`)
     .send({ nome: 'Projeto novo', descricao: 'Descrição' });
 
   assert.equal(resposta.status, 201);
-  assert.deepEqual(resposta.body, projetoCriado);
+  assert.deepEqual(resposta.body, {
+    id: 8,
+    nome: 'Projeto novo',
+    descricao: 'Descrição',
+    usuario_id: 27,
+    criadoEm: null,
+    atualizadoEm: null,
+  });
+
+  let filtro;
+  stub(t, prisma.projetos, 'findFirst', async args => {
+    filtro = args.where;
+    return criado;
+  });
+  await projetoModel.buscarProjetoPorId('8', 27);
+  assert.deepEqual(filtro, { id: 8, usuario_id: 27 });
 });
 
-test('tarefas filtram por criador ou responsável e usam os nomes de coluna do Neon', async t => {
-  const queryOriginal = pool.query;
-  const chamadas = [];
-  t.after(() => {
-    pool.query = queryOriginal;
-  });
-
-  pool.query = async (sql, valores = []) => {
-    chamadas.push({ sql, valores });
-    if (sql.includes('COUNT(*)')) return { rows: [{ total: '2' }], rowCount: 1 };
-    if (sql.startsWith('DELETE')) return { rows: [{ id: 3 }], rowCount: 1 };
-    return {
-      rows: [{
-        id: 3,
-        texto: 'Tarefa',
-        coluna: 'andamento',
-        ordem: 1,
-        projetoId: 8,
-        usuarioId: 27,
-      }],
-      rowCount: 1,
-    };
-  };
-
-  await tarefaModel.listarTarefas(27);
-  await tarefaModel.buscarTarefaPorId(3, 27);
-  await tarefaModel.contarTarefasEmAndamento(27, 3);
-  assert.equal(await tarefaModel.deletarTarefa(3, 27), true);
-
-  assert.deepEqual(chamadas[0].valores, [27]);
-  assert.match(chamadas[0].sql, /projeto_id AS "projetoId"/);
-  assert.match(chamadas[0].sql, /FROM buscar_tarefas_usuario\(\$1\)/);
-  assert.deepEqual(chamadas[1].valores, [3, 27]);
-  assert.deepEqual(chamadas[2].valores, [27, 3]);
-  assert.match(chamadas[2].sql, /coluna = 'doing'/);
-  assert.deepEqual(chamadas[3].valores, [3, 27]);
-  assert.match(chamadas[3].sql, /criado_por_id = \$2/);
-});
-
-test('tarefas chamam funções e procedure com parâmetros e ownership verificado', async t => {
-  const connectOriginal = pool.connect;
-  const chamadas = [];
-  t.after(() => {
-    pool.connect = connectOriginal;
-  });
-
-  pool.connect = async () => ({
-    query: async (sql, valores = []) => {
-      chamadas.push({ sql, valores });
-      if (sql.includes('SELECT id FROM tarefas')) {
-        return { rows: [{ id: 3 }], rowCount: 1 };
-      }
-      if (sql.includes('SELECT id FROM projetos')) {
-        return { rows: [{ id: 8 }], rowCount: 1 };
-      }
-      if (sql.includes('FROM avancar_tarefa')) {
-        return {
-          rows: [{ id: 3, coluna: 'andamento', projetoId: 8, usuarioId: 27 }],
-          rowCount: 1,
-        };
-      }
-      return { rows: [], rowCount: 0 };
-    },
-    release() {},
-  });
-
-  const avancada = await tarefaModel.avancarTarefa(3, 27);
-  assert.equal(avancada.coluna, 'andamento');
-  assert.deepEqual(chamadas[1].valores, [3, 27]);
-  assert.deepEqual(chamadas[2].valores, [3]);
-  assert.match(chamadas[2].sql, /FROM avancar_tarefa\(\$1\)/);
-
-  assert.equal(await tarefaModel.limparTarefasConcluidas(8, 27), true);
-  assert.deepEqual(chamadas[5].valores, [8, 27]);
-  assert.deepEqual(chamadas[6].valores, [8]);
-  assert.match(chamadas[6].sql, /CALL limpar_tarefas_concluidas\(\$1\)/);
-});
-
-test('atualizar tarefa grava timestamps de início e conclusão com ownership', async t => {
-  const connectOriginal = pool.connect;
-  const updates = [];
-  let tarefaAtual;
-
-  t.after(() => {
-    pool.connect = connectOriginal;
-  });
-
-  pool.connect = async () => ({
-    query: async (sql, valores = []) => {
-      if (sql.includes('COUNT(*) AS total')) {
-        return { rows: [{ total: '0' }], rowCount: 1 };
-      }
-      if (sql.includes('FROM usuarios')) {
-        return { rows: [{ id: 27 }], rowCount: 1 };
-      }
-      if (sql.includes('iniciada_em AS "iniciadaEm"')) {
-        return { rows: [tarefaAtual], rowCount: 1 };
-      }
-      if (sql.startsWith('UPDATE tarefas')) {
-        updates.push({ sql, valores });
-        return { rows: [{ id: 3 }], rowCount: 1 };
-      }
-      return { rows: [], rowCount: 0 };
-    },
-    release() {},
-  });
-
-  tarefaAtual = {
+test('tarefas formatam relações e incluem somente nomes de usuário e projeto', async t => {
+  const registro = {
     id: 3,
     texto: 'Tarefa',
-    coluna: 'afazer',
+    coluna: 'doing',
     ordem: 1,
     projeto_id: 8,
-    projetoId: 8,
     usuario_id: 27,
-    usuarioId: 27,
-    criadoPorId: 27,
-    iniciadaEm: null,
+    idprioridade: 2,
+    criado_por_id: 27,
+    criado_em: null,
+    atualizado_em: null,
+    iniciada_em: null,
+    concluido_em: null,
+    projetos: { nome: 'Projeto' },
+    usuarios: { nome: 'Usuário' },
   };
-  await tarefaModel.atualizarTarefa(3, { coluna: 'andamento' }, 27);
+  let consulta;
+  let filtroContagem;
 
-  assert.deepEqual(updates[0].valores.slice(0, 1), ['doing']);
-  assert.equal(updates[0].valores[1], null);
-  assert.ok(updates[0].valores[2] instanceof Date);
-  assert.deepEqual(updates[0].valores.slice(3), [3, 27]);
-  assert.match(updates[0].sql, /concluido_em = \$2, iniciada_em = \$3/);
-  assert.match(updates[0].sql, /WHERE id = \$4\s+AND \(criado_por_id = \$5 OR usuario_id = \$5\)/);
+  stub(t, prisma.tarefas, 'findMany', async args => {
+    consulta = args;
+    return [registro];
+  });
+  stub(t, prisma.tarefas, 'findFirst', async args => {
+    consulta = args;
+    return registro;
+  });
+  stub(t, prisma.tarefas, 'count', async args => {
+    filtroContagem = args.where;
+    return 2;
+  });
+  stub(t, prisma.tarefas, 'deleteMany', async args => {
+    assert.deepEqual(args.where, { id: 3, criado_por_id: 27 });
+    return { count: 1 };
+  });
 
-  const iniciadaEm = new Date('2026-01-01T12:00:00.000Z');
-  tarefaAtual = { ...tarefaAtual, coluna: 'andamento', iniciadaEm };
-  await tarefaModel.atualizarTarefa(3, { coluna: 'concluido' }, 27);
+  const tarefas = await tarefaModel.listarTarefas(27);
+  assert.deepEqual(consulta.include, {
+    projetos: { select: { nome: true } },
+    usuarios: { select: { nome: true } },
+  });
+  assert.equal(tarefas[0].coluna, 'andamento');
+  assert.equal(tarefas[0].projeto, 'Projeto');
+  assert.equal(tarefas[0].usuario, 'Usuário');
+  assert.equal(tarefas[0].projetoId, 8);
+  assert.equal(tarefas[0].criadoPorId, 27);
+  assert.equal(Object.hasOwn(tarefas[0], 'senha_hash'), false);
 
-  assert.deepEqual(updates[1].valores.slice(0, 1), ['done']);
-  assert.ok(updates[1].valores[1] instanceof Date);
-  assert.equal(updates[1].valores[2], iniciadaEm);
-  assert.deepEqual(updates[1].valores.slice(3), [3, 27]);
+  const tarefa = await tarefaModel.buscarTarefaPorId('3', 27);
+  assert.deepEqual(consulta.where, {
+    id: 3,
+    OR: [{ criado_por_id: 27 }, { usuario_id: 27 }],
+  });
+  assert.equal(tarefa.projeto, 'Projeto');
+  assert.equal(await tarefaModel.contarTarefasEmAndamento(27, 3), 2);
+  assert.deepEqual(filtroContagem, {
+    usuario_id: 27,
+    coluna: 'doing',
+    id: { not: 3 },
+  });
+  assert.equal(await tarefaModel.deletarTarefa(3, 27), true);
+});
+
+test('cria tarefas dentro de transação e aplica o limite de andamento', async t => {
+  const tarefaCriada = {
+    id: 4,
+    texto: 'Nova tarefa',
+    coluna: 'doing',
+    ordem: 0,
+    projeto_id: 8,
+    usuario_id: 29,
+    idprioridade: 2,
+    criado_por_id: 27,
+    criado_em: null,
+    atualizado_em: null,
+    iniciada_em: new Date('2026-10-23T12:00:00.000Z'),
+    concluido_em: null,
+    projetos: { nome: 'Projeto' },
+    usuarios: { nome: 'Responsável' },
+  };
+  let dadosCriacao;
+  let consultasContagem = 0;
+  let totalEmAndamento = 1;
+
+  stub(t, prisma, '$transaction', callback => callback(prisma));
+  stub(t, prisma, '$queryRaw', async () => []);
+  stub(t, prisma.projetos, 'findFirst', async ({ where }) => ({
+    id: where.id,
+  }));
+  stub(t, prisma.usuarios, 'findUnique', async ({ where }) => ({
+    id: where.id,
+  }));
+  stub(t, prisma.prioridades, 'findUnique', async ({ where }) => ({
+    id: where.id,
+  }));
+  stub(t, prisma.tarefas, 'count', async () => {
+    consultasContagem += 1;
+    return totalEmAndamento;
+  });
+  stub(t, prisma.tarefas, 'create', async args => {
+    dadosCriacao = args.data;
+    return tarefaCriada;
+  });
+
+  const tarefa = await tarefaModel.adicionarTarefa({
+    texto: 'Nova tarefa',
+    coluna: 'andamento',
+    projetoId: 8,
+    usuarioId: 29,
+    idprioridade: 2,
+  }, 27);
+
+  assert.equal(consultasContagem, 1);
+  assert.equal(dadosCriacao.coluna, 'doing');
+  assert.deepEqual(dadosCriacao.projetos, { connect: { id: 8 } });
+  assert.deepEqual(dadosCriacao.usuarios, { connect: { id: 29 } });
+  assert.deepEqual(dadosCriacao.criadores, { connect: { id: 27 } });
+  assert.deepEqual(dadosCriacao.prioridades, { connect: { id: 2 } });
+  assert.equal(tarefa.coluna, 'andamento');
+  assert.equal(tarefa.usuario, 'Responsável');
+
+  totalEmAndamento = 2;
+  await assert.rejects(
+    tarefaModel.adicionarTarefa({
+      texto: 'Outra tarefa',
+      coluna: 'andamento',
+      projetoId: 8,
+      usuarioId: 29,
+      idprioridade: 2,
+    }, 27),
+    error => error.code === 'TASK_IN_PROGRESS_LIMIT'
+  );
+});
+
+test('prioridades ativas e usuários são consultados sem expor hashes', async t => {
+  let chamadaPrioridades;
+  let chamadaUsuarios;
+  stub(t, prisma.prioridades, 'findMany', async args => {
+    chamadaPrioridades = args;
+    return [{ id: 1, descricao: 'Baixa' }];
+  });
+  stub(t, prisma.usuarios, 'findMany', async args => {
+    chamadaUsuarios = args;
+    return [{
+      id: 27,
+      nome: 'Usuário',
+      email: 'teste@example.invalid',
+      criado_em: null,
+      atualizado_em: null,
+    }];
+  });
+
+  assert.deepEqual(await prioridadesModel.listarPrioridades(), [
+    { id: 1, descricao: 'Baixa' },
+  ]);
+  assert.deepEqual(chamadaPrioridades.where, { ativo: true });
+  assert.deepEqual(chamadaPrioridades.select, { id: true, descricao: true });
+
+  const usuarios = await usuarioModel.listarUsuarios();
+  assert.deepEqual(chamadaUsuarios.select, {
+    id: true,
+    nome: true,
+    email: true,
+    criado_em: true,
+    atualizado_em: true,
+  });
+  assert.deepEqual(usuarios[0], {
+    id: 27,
+    nome: 'Usuário',
+    email: 'teste@example.invalid',
+    criadoEm: null,
+    atualizadoEm: null,
+  });
+  assert.equal(Object.hasOwn(usuarios[0], 'senha_hash'), false);
 });

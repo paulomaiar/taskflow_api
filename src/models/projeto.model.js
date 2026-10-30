@@ -1,80 +1,71 @@
-const pool = require('../database/db');
+const prisma = require('../database/prisma');
 
-const CAMPOS_PROJETO = `
-  id,
-  nome,
-  descricao,
-  usuario_id,
-  criado_em AS "criadoEm",
-  atualizado_em AS "atualizadoEm"
-`;
+function formatarProjeto(projeto) {
+  if (!projeto) return null;
+
+  const { criado_em, atualizado_em, ...resto } = projeto;
+  return {
+    ...resto,
+    criadoEm: criado_em,
+    atualizadoEm: atualizado_em,
+  };
+}
 
 async function listarProjetos(usuarioId) {
-  const resultado = await pool.query(
-    `SELECT ${CAMPOS_PROJETO}
-     FROM projetos
-     WHERE usuario_id = $1
-     ORDER BY id`,
-    [usuarioId]
-  );
-  return resultado.rows;
+  const projetos = await prisma.projetos.findMany({
+    where: { usuario_id: Number(usuarioId) },
+    orderBy: { nome: 'asc' },
+  });
+  return projetos.map(formatarProjeto);
 }
 
 async function buscarProjetoPorId(id, usuarioId) {
-  const resultado = await pool.query(
-    `SELECT ${CAMPOS_PROJETO}
-     FROM projetos
-     WHERE id = $1 AND usuario_id = $2`,
-    [id, usuarioId]
-  );
-  return resultado.rows[0];
+  const projeto = await prisma.projetos.findFirst({
+    where: { id: Number(id), usuario_id: Number(usuarioId) },
+  });
+  return formatarProjeto(projeto);
 }
 
 async function adicionarProjeto(dados, usuarioId) {
-  const resultado = await pool.query(
-    `INSERT INTO projetos (nome, descricao, usuario_id)
-     VALUES ($1, $2, $3)
-     RETURNING ${CAMPOS_PROJETO}`,
-    [dados.nome, dados.descricao || null, usuarioId]
-  );
-  return resultado.rows[0];
+  const projeto = await prisma.projetos.create({
+    data: {
+      nome: dados.nome,
+      descricao: dados.descricao || null,
+      usuarios: { connect: { id: Number(usuarioId) } },
+    },
+  });
+  return formatarProjeto(projeto);
 }
 
 async function atualizarProjeto(id, dadosNovos, usuarioId) {
-  const campos = [];
-  const valores = [];
+  const dados = {};
+  if (dadosNovos.nome !== undefined) dados.nome = dadosNovos.nome;
+  if (dadosNovos.descricao !== undefined) dados.descricao = dadosNovos.descricao;
 
-  if (dadosNovos.nome !== undefined) {
-    valores.push(dadosNovos.nome);
-    campos.push(`nome = $${valores.length}`);
-  }
-
-  if (dadosNovos.descricao !== undefined) {
-    valores.push(dadosNovos.descricao);
-    campos.push(`descricao = $${valores.length}`);
-  }
-
-  if (campos.length === 0) {
+  if (Object.keys(dados).length === 0) {
     return buscarProjetoPorId(id, usuarioId);
   }
 
-  valores.push(id, usuarioId);
-  const resultado = await pool.query(
-    `UPDATE projetos
-     SET ${campos.join(', ')}, atualizado_em = NOW()
-     WHERE id = $${valores.length - 1} AND usuario_id = $${valores.length}
-     RETURNING ${CAMPOS_PROJETO}`,
-    valores
-  );
-  return resultado.rows[0] || null;
+  return prisma.$transaction(async tx => {
+    const resultado = await tx.projetos.updateMany({
+      where: { id: Number(id), usuario_id: Number(usuarioId) },
+      data: dados,
+    });
+
+    if (resultado.count === 0) return null;
+
+    const projeto = await tx.projetos.findFirst({
+      where: { id: Number(id), usuario_id: Number(usuarioId) },
+    });
+    return formatarProjeto(projeto);
+  });
 }
 
 async function deletarProjeto(id, usuarioId) {
-  const resultado = await pool.query(
-    'DELETE FROM projetos WHERE id = $1 AND usuario_id = $2 RETURNING id',
-    [id, usuarioId]
-  );
-  return resultado.rowCount > 0;
+  const resultado = await prisma.projetos.deleteMany({
+    where: { id: Number(id), usuario_id: Number(usuarioId) },
+  });
+  return resultado.count > 0;
 }
 
 module.exports = {

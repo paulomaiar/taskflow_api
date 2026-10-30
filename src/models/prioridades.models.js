@@ -1,18 +1,19 @@
-const pool = require('../database/db');
+const prisma = require('../database/prisma');
 
 async function listarPrioridades() {
-  const resultado = await pool.query(
-    'SELECT id, descricao FROM prioridades ORDER BY id'
-  );
-  return resultado.rows;
+  return prisma.prioridades.findMany({
+    where: { ativo: true },
+    select: { id: true, descricao: true },
+    orderBy: { id: 'asc' },
+  });
 }
 
 async function existePrioridade(id) {
-  const resultado = await pool.query(
-    'SELECT id FROM prioridades WHERE id = $1',
-    [id]
-  );
-  return resultado.rowCount > 0;
+  const prioridade = await prisma.prioridades.findUnique({
+    where: { id: Number(id) },
+    select: { id: true },
+  });
+  return Boolean(prioridade);
 }
 
 module.exports = { listarPrioridades, existePrioridade };

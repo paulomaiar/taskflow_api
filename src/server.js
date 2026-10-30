@@ -4,12 +4,12 @@ if (!process.env.JWT_SECRET) {
   process.env.JWT_SECRET = 'taskflow-secret-development';
 }
 
-const pool = require('./database/db');
+const prisma = require('./database/prisma');
 const app = require('./app');
 const PORT = process.env.PORT || 3001;
 
 async function iniciarServidor() {
-  await pool.query('SELECT 1');
+  await prisma.$connect();
 
   app.listen(PORT, () => {
     console.log(`Servidor MVC rodando na porta ${PORT}`);

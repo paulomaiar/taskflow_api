@@ -15,7 +15,7 @@ function validar(schema, origem) {
       }
 
       if (ausente) {
-        erros.push({ campo, mensagem: 'é obrigatório' });
+        erros.push(`${campo} é obrigatório`);
         continue;
       }
 
@@ -24,7 +24,7 @@ function validar(schema, origem) {
         const numero = converter && typeof valor === 'string' ? Number(valor) : valor;
 
         if (!Number.isInteger(numero) || numero <= 0) {
-          erros.push({ campo, mensagem: 'deve ser um número inteiro positivo' });
+          erros.push(`${campo} deve ser um número inteiro positivo`);
           continue;
         }
 
@@ -34,11 +34,11 @@ function validar(schema, origem) {
         }
       } else if (regra.tipo === 'texto') {
         if (typeof valor !== 'string' || !valor.trim()) {
-          erros.push({ campo, mensagem: 'deve ser um texto não vazio' });
+          erros.push(`${campo} deve ser um texto não vazio`);
         }
       } else if (regra.tipo === 'email') {
         if (typeof valor !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valor)) {
-          erros.push({ campo, mensagem: 'deve ser um endereço de e-mail válido' });
+          erros.push(`${campo} deve ser um endereço de e-mail válido`);
         }
       }
     }

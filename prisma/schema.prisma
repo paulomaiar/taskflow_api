@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model auditoria_tarefas {
+  id            Int      @id @default(autoincrement())
+  tarefa_id     Int
+  operacao      String   @db.VarChar(10)
+  coluna_antes  String?  @db.VarChar(20)
+  coluna_depois String?  @db.VarChar(20)
+  alterado_por  Int?
+  alterado_em   DateTime @default(now()) @db.Timestamp(6)
+}
+
+model clientes {
+  id              Int       @id @default(autoincrement())
+  data_nascimento DateTime  @db.Date
+  nome            String    @db.VarChar(100)
+  pedidos         pedidos[]
+}
+
+model comentarios {
+  id            Int       @id @default(autoincrement())
+  texto         String
+  tarefa_id     Int
+  usuario_id    Int
+  criado_em     DateTime? @default(now()) @db.Timestamp(6)
+  atualizado_em DateTime? @default(now()) @db.Timestamp(6)
+  tarefas       tarefas   @relation(fields: [tarefa_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  usuarios      usuarios  @relation(fields: [usuario_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tarefa_id])
+}
+
+model pedidos {
+  id           Int            @id @default(autoincrement())
+  data         DateTime       @default(now()) @db.Timestamp(6)
+  idcliente    Int
+  clientes     clientes       @relation(fields: [idcliente], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  pedidositens pedidositens[]
+}
+
+model pedidositens {
+  id         Int      @id @default(autoincrement())
+  idpedido   Int
+  idproduto  Int
+  valor      Decimal  @db.Decimal(18, 2)
+  desconto   Decimal  @db.Decimal(18, 2)
+  quantidade Decimal  @db.Decimal(18, 2)
+  pedidos    pedidos  @relation(fields: [idpedido], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  produtos   produtos @relation(fields: [idproduto], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model prioridades {
+  id        Int       @id @default(autoincrement())
+  descricao String?
+  criado_em DateTime? @default(now()) @db.Timestamp(6)
+  ativo     Boolean?
+  tarefas   tarefas[]
+}
+
+model produtos {
+  id              Int            @id @default(autoincrement())
+  descricao       String?        @db.VarChar(30)
+  idunidademedida Int
+  pedidositens    pedidositens[]
+  unidadesmedida  unidadesmedida @relation(fields: [idunidademedida], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model projetos {
+  id            Int       @id @default(autoincrement())
+  nome          String    @db.VarChar(100)
+  descricao     String?
+  usuario_id    Int
+  criado_em     DateTime? @default(now()) @db.Timestamp(6)
+  atualizado_em DateTime? @default(now()) @db.Timestamp(6)
+  usuarios      usuarios  @relation(fields: [usuario_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tarefas       tarefas[]
+
+  @@unique([id, usuario_id], map: "projetos_id_usuario_id_uidx")
+  @@index([usuario_id, id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tarefas {
+  id                                       Int           @id @default(autoincrement())
+  texto                                    String
+  coluna                                   String        @default("todo") @db.VarChar(10)
+  ordem                                    Int           @default(0)
+  projeto_id                               Int
+  usuario_id                               Int
+  criado_em                                DateTime?     @default(now()) @db.Timestamp(6)
+  atualizado_em                            DateTime?     @default(now()) @db.Timestamp(6)
+  iniciada_em                              DateTime?     @db.Timestamp(6)
+  concluido_em                             DateTime?     @db.Timestamp(6)
+  idprioridade                             Int           @default(2)
+  criado_por_id                            Int
+  comentarios                              comentarios[]
+  criadores                                usuarios      @relation("tarefas_criado_por_idTousuarios", fields: [criado_por_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  prioridades                              prioridades   @relation(fields: [idprioridade], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  projetos                                 projetos      @relation(fields: [projeto_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  usuarios                                usuarios      @relation("tarefas_usuario_idTousuarios", fields: [usuario_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([criado_por_id], map: "tarefas_criador_id_idx")
+  @@index([usuario_id], map: "tarefas_responsavel_id_idx")
+  @@index([usuario_id, projeto_id, ordem, id], map: "tarefas_usuario_projeto_ordem_id_idx")
+}
+
+model taskflow_schema_migrations {
+  filename   String   @id
+  applied_at DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model unidadesmedida {
+  id        Int        @id @default(autoincrement())
+  sigla     String     @db.VarChar(3)
+  descricao String?    @db.VarChar(30)
+  produtos  produtos[]
+}
+
+model usuarios {
+  id                                      Int           @id @default(autoincrement())
+  nome                                    String        @db.VarChar(100)
+  email                                   String        @unique @db.VarChar(150)
+  senha_hash                              String        @db.VarChar(255)
+  criado_em                               DateTime?     @default(now()) @db.Timestamp(6)
+  atualizado_em                           DateTime?     @default(now()) @db.Timestamp(6)
+  comentarios                             comentarios[]
+  projetos                                projetos[]
+  tarefas_tarefas_criado_por_idTousuarios tarefas[]     @relation("tarefas_criado_por_idTousuarios")
+  tarefas_tarefas_usuario_idTousuarios    tarefas[]     @relation("tarefas_usuario_idTousuarios")
+}

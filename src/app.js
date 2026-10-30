@@ -2,6 +2,8 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
+const swaggerUi = require('swagger-ui-express');
+const openapi = require('./docs/openapi');
 
 if (!process.env.JWT_SECRET) {
   process.env.JWT_SECRET = 'taskflow-secret-development';
@@ -43,6 +45,8 @@ app.use(express.json());
 app.use(logger);
 app.use(validarContentType);
 app.use(temporizador);
+
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapi));
 
 app.get('/', (req, res) => {
   res.json({ mensagem: 'TaskFlow API funcionando com MVC!' });
