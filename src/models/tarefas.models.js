@@ -1,8 +1,11 @@
+// @ts-check
+
 const prisma = require('../database/prisma');
 
 const incluirNomes = {
   projetos: { select: { nome: true } },
   usuarios: { select: { nome: true } },
+  prioridades: { select: { descricao: true, cor: true } },
 };
 
 const COLUNAS_ATUALIZAVEIS = {
@@ -45,6 +48,7 @@ function formatarTarefa(tarefa) {
   const {
     projetos,
     usuarios,
+    prioridades,
     criado_em,
     atualizado_em,
     iniciada_em,
@@ -65,6 +69,8 @@ function formatarTarefa(tarefa) {
     concluidoEm: concluido_em,
     projeto: projetos?.nome || null,
     usuario: usuarios?.nome || null,
+    prioridade: prioridades?.descricao || null,
+    prioridade_cor: prioridades?.cor || null,
   };
 }
 
@@ -212,22 +218,10 @@ async function adicionarTarefa(dados, criadorId) {
   const coluna = normalizarStatus(dados.coluna || 'afazer');
   const usuarioId = Number(dados.usuarioId);
   const projetoId = Number(dados.projetoId);
-  const prioridadeId = Number(dados.idprioridade);
+  const prioridadeId = Number(dados.idprioridade || 2);
 
   return prisma.$transaction(async tx => {
     if (!await validarProjetoDoUsuario(tx, projetoId, criadorId)) return null;
-
-    const responsavel = await tx.usuarios.findUnique({
-      where: { id: usuarioId },
-      select: { id: true },
-    });
-    if (!responsavel) return null;
-
-    const prioridade = await tx.prioridades.findUnique({
-      where: { id: prioridadeId },
-      select: { id: true },
-    });
-    if (!prioridade) return null;
 
     if (coluna === 'doing') {
       await bloquearUsuario(tx, usuarioId);
@@ -240,7 +234,7 @@ async function adicionarTarefa(dados, criadorId) {
       data: {
         texto: dados.texto,
         coluna,
-        ordem: dados.ordem ?? 0,
+        ordem: Number(dados.ordem) || 0,
         projetos: { connect: { id: projetoId } },
         usuarios: { connect: { id: usuarioId } },
         criadores: { connect: { id: Number(criadorId) } },
@@ -274,17 +268,15 @@ async function atualizarTarefa(id, dadosNovos, usuarioId) {
       FOR UPDATE
     `;
 
-    const tarefaAtual = await tx.tarefas.findFirst({
-      where: {
-        id: tarefaId,
-        OR: [
-          { criado_por_id: usuarioAtual },
-          { usuario_id: usuarioAtual },
-        ],
-      },
+    const tarefaAtual = await tx.tarefas.findUnique({
+      where: { id: tarefaId },
       include: incluirNomes,
     });
-    if (!tarefaAtual) return null;
+    if (!tarefaAtual ||
+        (Number(tarefaAtual.criado_por_id) !== usuarioAtual &&
+         Number(tarefaAtual.usuario_id) !== usuarioAtual)) {
+      return null;
+    }
 
     if (Number(tarefaAtual.criado_por_id) !== Number(usuarioId) &&
         atualizacoes.some(([campo]) => campo !== 'coluna')) {
@@ -298,12 +290,15 @@ async function atualizarTarefa(id, dadosNovos, usuarioId) {
     const dados = {};
     for (const [campo, valor] of atualizacoes) {
       const coluna = COLUNAS_ATUALIZAVEIS[campo];
-      dados[coluna] = campo === 'coluna' ? normalizarStatus(valor) : valor;
+      dados[coluna] = campo === 'coluna'
+        ? normalizarStatus(valor)
+        : ['ordem', 'projetoId', 'usuarioId', 'idprioridade'].includes(campo)
+          ? Number(valor)
+          : valor;
     }
 
     const projetoId = dados.projeto_id ?? tarefaAtual.projeto_id;
     const responsavelId = dados.usuario_id ?? tarefaAtual.usuario_id;
-    const prioridadeId = dados.idprioridade;
     const statusNovo = dados.coluna ?? tarefaAtual.coluna;
 
     if (statusNovo === 'doing' &&
@@ -317,22 +312,6 @@ async function atualizarTarefa(id, dadosNovos, usuarioId) {
     if (projetoId !== tarefaAtual.projeto_id &&
         !await validarProjetoDoUsuario(tx, projetoId, tarefaAtual.criado_por_id)) {
       return null;
-    }
-
-    if (dados.usuario_id !== undefined) {
-      const usuario = await tx.usuarios.findUnique({
-        where: { id: Number(responsavelId) },
-        select: { id: true },
-      });
-      if (!usuario) return null;
-    }
-
-    if (prioridadeId !== undefined) {
-      const prioridade = await tx.prioridades.findUnique({
-        where: { id: Number(prioridadeId) },
-        select: { id: true },
-      });
-      if (!prioridade) return null;
     }
 
     if (dados.coluna !== undefined) {
@@ -352,10 +331,19 @@ async function atualizarTarefa(id, dadosNovos, usuarioId) {
 }
 
 async function deletarTarefa(id, usuarioId) {
-  const resultado = await prisma.tarefas.deleteMany({
-    where: { id: Number(id), criado_por_id: Number(usuarioId) },
-  });
-  return resultado.count > 0;
+  try {
+    const tarefa = await prisma.tarefas.findFirst({
+      where: { id: Number(id), criado_por_id: Number(usuarioId) },
+      select: { id: true },
+    });
+    if (!tarefa) return null;
+
+    await prisma.tarefas.delete({ where: { id: Number(id) } });
+    return true;
+  } catch (erro) {
+    if (erro.code === 'P2025') return null;
+    throw erro;
+  }
 }
 
 module.exports = {

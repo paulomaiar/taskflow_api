@@ -1,4 +1,4 @@
-const { json, parametroId, respostaErro } = require('./comum');
+const { json, jsonLista, parametroId, respostaErro } = require('./comum');
 
 const schemas = {
   Projeto: {
@@ -36,14 +36,7 @@ const paths = {
       responses: {
         200: {
           description: 'Lista de projetos.',
-          content: {
-            'application/json': {
-              schema: {
-                type: 'array',
-                items: { $ref: '#/components/schemas/Projeto' },
-              },
-            },
-          },
+          content: jsonLista('Projeto'),
         },
         401: respostaErro('Token ausente ou inválido.'),
       },

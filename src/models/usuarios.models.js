@@ -1,9 +1,14 @@
+// @ts-check
+
 const crypto = require('crypto');
 const { promisify } = require('util');
+const bcrypt = require('bcryptjs');
 const prisma = require('../database/prisma');
+const criarErro = require('../utils/criarErro');
 
 const scrypt = promisify(crypto.scrypt);
 const TAMANHO_HASH = 64;
+const ROUNDS_BCRYPT = 12;
 const CAMPOS_PUBLICOS = {
   id: true,
   nome: true,
@@ -23,22 +28,32 @@ function formatarUsuario(usuario) {
   };
 }
 
-function criarErroEmailDuplicado(erro) {
-  if (erro.code !== 'P2002') return erro;
-
-  const duplicado = new Error('Email já cadastrado');
-  duplicado.code = 'USER_EMAIL_EXISTS';
-  return duplicado;
-}
-
 async function gerarHashSenha(senha) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = await scrypt(senha, salt, TAMANHO_HASH);
-  return `scrypt$${salt}$${hash.toString('hex')}`;
+  if (Buffer.byteLength(senha, 'utf8') > 72) {
+    throw criarErro(400, 'A senha deve ter no máximo 72 bytes');
+  }
+
+  return bcrypt.hash(senha, ROUNDS_BCRYPT);
 }
 
 async function verificarSenha(senha, senhaHash) {
-  const [algoritmo, salt, hashSalvo] = String(senhaHash).split('$');
+  const hashString = String(senhaHash);
+  const [algoritmo, salt, hashSalvo] = hashString.split('$');
+
+  if (hashString.startsWith('$2a$') || hashString.startsWith('$2b$')) {
+    if (
+      Buffer.byteLength(senha, 'utf8') > 72 ||
+      !/^\$2[ab]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(hashString)
+    ) {
+      return { valida: false, precisaAtualizarHash: false };
+    }
+
+    const rounds = bcrypt.getRounds(hashString);
+    return {
+      valida: await bcrypt.compare(senha, hashString),
+      precisaAtualizarHash: rounds < ROUNDS_BCRYPT,
+    };
+  }
 
   if (algoritmo === 'scrypt') {
     if (!salt || !hashSalvo) {
@@ -51,10 +66,15 @@ async function verificarSenha(senha, senhaHash) {
     }
 
     const hashCalculado = await scrypt(senha, salt, TAMANHO_HASH);
+    const valida = crypto.timingSafeEqual(hashCalculado, hashBuffer);
     return {
-      valida: crypto.timingSafeEqual(hashCalculado, hashBuffer),
-      precisaAtualizarHash: false,
+      valida,
+      precisaAtualizarHash: valida && Buffer.byteLength(senha, 'utf8') <= 72,
     };
+  }
+
+  if (hashString.startsWith('$2')) {
+    return { valida: false, precisaAtualizarHash: false };
   }
 
   const senhaBuffer = Buffer.from(String(senha));
@@ -64,9 +84,10 @@ async function verificarSenha(senha, senhaHash) {
     return { valida: false, precisaAtualizarHash: false };
   }
 
+  const valida = crypto.timingSafeEqual(senhaBuffer, hashBuffer);
   return {
-    valida: crypto.timingSafeEqual(senhaBuffer, hashBuffer),
-    precisaAtualizarHash: true,
+    valida,
+    precisaAtualizarHash: valida && Buffer.byteLength(senha, 'utf8') <= 72,
   };
 }
 
@@ -118,30 +139,26 @@ async function autenticarUsuario(email, senha) {
 async function adicionarUsuario(dados) {
   const senhaHash = await gerarHashSenha(dados.senha);
 
-  try {
-    return await prisma.$transaction(async tx => {
-      const usuario = await tx.usuarios.create({
-        data: {
-          nome: dados.nome,
-          email: dados.email,
-          senha_hash: senhaHash,
-        },
-        select: CAMPOS_PUBLICOS,
-      });
-
-      await tx.projetos.create({
-        data: {
-          nome: 'Projeto Padrão',
-          descricao: null,
-          usuarios: { connect: { id: usuario.id } },
-        },
-      });
-
-      return formatarUsuario(usuario);
+  return prisma.$transaction(async tx => {
+    const usuario = await tx.usuarios.create({
+      data: {
+        nome: dados.nome,
+        email: dados.email,
+        senha_hash: senhaHash,
+      },
+      select: CAMPOS_PUBLICOS,
     });
-  } catch (erro) {
-    throw criarErroEmailDuplicado(erro);
-  }
+
+    await tx.projetos.create({
+      data: {
+        nome: 'Projeto Padrão',
+        descricao: null,
+        usuarios: { connect: { id: usuario.id } },
+      },
+    });
+
+    return formatarUsuario(usuario);
+  });
 }
 
 async function atualizarUsuario(id, dadosNovos) {
@@ -157,29 +174,26 @@ async function atualizarUsuario(id, dadosNovos) {
   }
 
   try {
-    return await prisma.$transaction(async tx => {
-      const resultado = await tx.usuarios.updateMany({
-        where: { id: Number(id) },
-        data: dados,
-      });
-      if (resultado.count === 0) return null;
-
-      const usuario = await tx.usuarios.findUnique({
-        where: { id: Number(id) },
-        select: CAMPOS_PUBLICOS,
-      });
-      return formatarUsuario(usuario);
+    const usuario = await prisma.usuarios.update({
+      where: { id: Number(id) },
+      data: dados,
+      select: CAMPOS_PUBLICOS,
     });
+    return formatarUsuario(usuario);
   } catch (erro) {
-    throw criarErroEmailDuplicado(erro);
+    if (erro.code === 'P2025') return null;
+    throw erro;
   }
 }
 
 async function deletarUsuario(id) {
-  const resultado = await prisma.usuarios.deleteMany({
-    where: { id: Number(id) },
-  });
-  return resultado.count > 0;
+  try {
+    await prisma.usuarios.delete({ where: { id: Number(id) } });
+    return true;
+  } catch (erro) {
+    if (erro.code === 'P2025') return false;
+    throw erro;
+  }
 }
 
 module.exports = {

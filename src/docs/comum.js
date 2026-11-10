@@ -22,6 +22,17 @@ function json(nome) {
   };
 }
 
+function jsonLista(nome) {
+  return {
+    'application/json': {
+      schema: {
+        type: 'array',
+        items: { $ref: `#/components/schemas/${nome}` },
+      },
+    },
+  };
+}
+
 const parametroId = {
   name: 'id',
   in: 'path',
@@ -34,4 +45,4 @@ const respostaErro = descricao => ({
   content: json('Erro'),
 });
 
-module.exports = { Erro, json, parametroId, respostaErro };
+module.exports = { Erro, json, jsonLista, parametroId, respostaErro };

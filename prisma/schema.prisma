@@ -61,8 +61,9 @@ model pedidositens {
 model prioridades {
   id        Int       @id @default(autoincrement())
   descricao String?
+  cor       String?   @db.VarChar(32)
   criado_em DateTime? @default(now()) @db.Timestamp(6)
-  ativo     Boolean?
+  ativo     Boolean   @default(true)
   tarefas   tarefas[]
 }
 

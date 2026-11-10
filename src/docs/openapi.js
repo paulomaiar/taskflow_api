@@ -13,7 +13,7 @@ module.exports = {
     version: '1.0.0',
     description: 'API REST para gerenciamento de tarefas, projetos e usuários do TaskFlow.',
   },
-  servers: [{ url: 'http://localhost:3001', description: 'Servidor local' }],
+  servers: [{ url: '/', description: 'Este servidor' }],
   security: [{ bearerAuth: [] }],
   components: {
     securitySchemes: {

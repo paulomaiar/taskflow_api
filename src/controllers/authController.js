@@ -18,7 +18,7 @@ async function login(req, res) {
   const usuarioEncontrado = await usuarioModel.autenticarUsuario(identificador, senha);
 
   if (!usuarioEncontrado) {
-    throw criarErro(401, 'E-mail ou senha inválidos');
+    throw criarErro(401, 'Credenciais inválidas');
   }
 
   const secret = process.env.JWT_SECRET || 'fallback_secret';

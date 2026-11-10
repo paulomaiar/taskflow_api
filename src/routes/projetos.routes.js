@@ -1,8 +1,8 @@
 const { Router } = require('express');
 const projetosController = require('../controllers/projetos.controller');
 const autenticar = require('../middlewares/autenticar');
-const validar = require('../middlewares/validar.middleware');
-const schemas = require('../schemas/schemas');
+const validar = require('../middlewares/validar');
+const schemas = require('../middlewares/schemas');
 
 const router = Router();
 const idValido = validar(schemas.id, 'params');

@@ -1,3 +1,5 @@
+// @ts-check
+
 const prisma = require('../database/prisma');
 
 function formatarProjeto(projeto) {
@@ -46,26 +48,38 @@ async function atualizarProjeto(id, dadosNovos, usuarioId) {
     return buscarProjetoPorId(id, usuarioId);
   }
 
-  return prisma.$transaction(async tx => {
-    const resultado = await tx.projetos.updateMany({
-      where: { id: Number(id), usuario_id: Number(usuarioId) },
+  const projetoExistente = await prisma.projetos.findFirst({
+    where: { id: Number(id), usuario_id: Number(usuarioId) },
+    select: { id: true },
+  });
+  if (!projetoExistente) return null;
+
+  try {
+    const projeto = await prisma.projetos.update({
+      where: { id: Number(id) },
       data: dados,
     });
-
-    if (resultado.count === 0) return null;
-
-    const projeto = await tx.projetos.findFirst({
-      where: { id: Number(id), usuario_id: Number(usuarioId) },
-    });
     return formatarProjeto(projeto);
-  });
+  } catch (erro) {
+    if (erro.code === 'P2025') return null;
+    throw erro;
+  }
 }
 
 async function deletarProjeto(id, usuarioId) {
-  const resultado = await prisma.projetos.deleteMany({
+  const projeto = await prisma.projetos.findFirst({
     where: { id: Number(id), usuario_id: Number(usuarioId) },
+    select: { id: true },
   });
-  return resultado.count > 0;
+  if (!projeto) return false;
+
+  try {
+    await prisma.projetos.delete({ where: { id: Number(id) } });
+    return true;
+  } catch (erro) {
+    if (erro.code === 'P2025') return false;
+    throw erro;
+  }
 }
 
 module.exports = {

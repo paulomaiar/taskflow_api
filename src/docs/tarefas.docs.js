@@ -1,4 +1,4 @@
-const { json, parametroId, respostaErro } = require('./comum');
+const { json, jsonLista, parametroId, respostaErro } = require('./comum');
 
 const schemas = {
   Tarefa: {
@@ -66,7 +66,7 @@ const paths = {
       responses: {
         200: {
           description: 'Lista de tarefas.',
-          content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Tarefa' } } } },
+          content: jsonLista('Tarefa'),
         },
         400: erro400,
         401: erro401,

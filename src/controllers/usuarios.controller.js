@@ -30,15 +30,8 @@ async function criar(req, res) {
     throw criarErro(400, 'Preencha todos os campos: nome, email e senha');
   }
 
-  try {
-    const novoUsuario = await usuarioModel.adicionarUsuario(corpo);
-    return res.status(201).json(novoUsuario);
-  } catch (erro) {
-    if (erro.code === 'USER_EMAIL_EXISTS') {
-      throw criarErro(400, erro.message);
-    }
-    throw erro;
-  }
+  const novoUsuario = await usuarioModel.adicionarUsuario(corpo);
+  return res.status(201).json(novoUsuario);
 }
 
 async function atualizar(req, res) {
@@ -54,15 +47,7 @@ async function atualizar(req, res) {
     }
   }
 
-  let usuarioAtualizado;
-  try {
-    usuarioAtualizado = await usuarioModel.atualizarUsuario(id, corpo);
-  } catch (erro) {
-    if (erro.code === 'USER_EMAIL_EXISTS') {
-      throw criarErro(400, erro.message);
-    }
-    throw erro;
-  }
+  const usuarioAtualizado = await usuarioModel.atualizarUsuario(id, corpo);
 
   if (!usuarioAtualizado) {
     throw criarErro(404, 'Recurso não encontrado');

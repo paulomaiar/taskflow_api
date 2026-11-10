@@ -8,6 +8,7 @@
     "test": "node --test tests/auth.test.js",
     "postinstall": "prisma generate",
     "db:migrate": "node scripts/migrate.js",
+    "db:seed": "node scripts/seed.js",
     "db:import-json": "node scripts/import-json-to-postgres.js"
   },
   "keywords": [],
@@ -16,6 +17,7 @@
   "description": "",
   "dependencies": {
     "@prisma/client": "6.19.3",
+    "bcryptjs": "^3.0.2",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
@@ -27,5 +29,9 @@
     "nodemon": "^3.1.14",
     "prisma": "6.19.3",
     "supertest": "^7.2.2"
+  },
+  "overrides": {
+    "deepmerge-ts": "^8.0.0",
+    "minimatch": "^11.0.1"
   }
 }

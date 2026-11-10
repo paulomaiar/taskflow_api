@@ -1,7 +1,7 @@
 const { json, respostaErro } = require('./comum');
 
 const schemas = {
-  LoginEntrada: {
+  Login: {
     type: 'object',
     required: ['senha'],
     properties: {
@@ -27,7 +27,7 @@ const paths = {
       security: [],
       requestBody: {
         required: true,
-        content: json('LoginEntrada'),
+        content: json('Login'),
       },
       responses: {
         200: { description: 'Autenticação realizada.', content: json('LoginResposta') },

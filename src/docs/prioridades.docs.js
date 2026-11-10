@@ -1,11 +1,12 @@
-const { respostaErro } = require('./comum');
+const { jsonLista, respostaErro } = require('./comum');
 
 const schemas = {
   Prioridade: {
     type: 'object',
     properties: {
       id: { type: 'integer', example: 2 },
-      descricao: { type: 'string', nullable: true, example: 'Média' },
+      descricao: { type: 'string', nullable: true, example: 'Médio' },
+      cor: { type: 'string', nullable: true, example: '#f1c40f' },
     },
   },
 };
@@ -17,14 +18,7 @@ const paths = {
       responses: {
         200: {
           description: 'Lista de prioridades.',
-          content: {
-            'application/json': {
-              schema: {
-                type: 'array',
-                items: { $ref: '#/components/schemas/Prioridade' },
-              },
-            },
-          },
+          content: jsonLista('Prioridade'),
         },
         401: respostaErro('Token ausente ou inválido.'),
       },

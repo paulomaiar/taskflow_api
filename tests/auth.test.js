@@ -1,7 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
+const { Prisma } = require('@prisma/client');
 const prisma = require('../src/database/prisma');
 const app = require('../src/app');
 const usuarioModel = require('../src/models/usuarios.models');
@@ -32,6 +34,9 @@ test('documentação OpenAPI fica disponível sem autenticação', async () => {
   const resposta = await request(app).get('/docs/');
   assert.equal(resposta.status, 200);
   assert.match(resposta.text, /swagger-ui-init\.js/);
+  assert.match(resposta.text, /cdn\.jsdelivr\.net\/npm\/swagger-ui-dist@5\.17\.14\/swagger-ui\.css/);
+  assert.match(resposta.text, /cdn\.jsdelivr\.net\/npm\/swagger-ui-dist@5\.17\.14\/swagger-ui-bundle\.js/);
+  assert.match(resposta.text, /cdn\.jsdelivr\.net\/npm\/swagger-ui-dist@5\.17\.14\/swagger-ui-standalone-preset\.js/);
 });
 
 test('params e filtros inválidos retornam 400 com detalhes textuais', async () => {
@@ -78,7 +83,7 @@ test('cadastro e login usam Prisma, criam projeto padrão e nunca retornam hash'
   stub(t, prisma, '$transaction', callback => callback(prisma));
   stub(t, prisma.usuarios, 'create', async args => {
     hashSalvo = args.data.senha_hash;
-    assert.match(hashSalvo, /^scrypt\$/);
+    assert.match(hashSalvo, /^\$2[ab]\$12\$/);
     return usuarioCriado;
   });
   stub(t, prisma.projetos, 'create', async args => {
@@ -113,6 +118,50 @@ test('cadastro e login usam Prisma, criam projeto padrão e nunca retornam hash'
     id: 27,
     nome: usuarioCriado.nome,
     email: usuarioCriado.email,
+  });
+});
+
+test('hashes scrypt existentes autenticam e migram para bcrypt', async t => {
+  const usuario = {
+    id: 28,
+    nome: 'Usuário legado',
+    email: 'legado@example.invalid',
+  };
+  const salt = 'salt-legado';
+  const hashLegado = await new Promise((resolve, reject) => {
+    crypto.scrypt('senha-legada', salt, 64, (erro, resultado) => {
+      if (erro) reject(erro);
+      else resolve(resultado.toString('hex'));
+    });
+  });
+  let senhaHash = `scrypt$${salt}$${hashLegado}`;
+
+  stub(t, prisma.usuarios, 'findUnique', async () => ({
+    ...usuario,
+    senha_hash: senhaHash,
+  }));
+  stub(t, prisma.usuarios, 'update', async args => {
+    senhaHash = args.data.senha_hash;
+    return {};
+  });
+
+  assert.deepEqual(
+    await usuarioModel.autenticarUsuario(usuario.email, 'senha-legada'),
+    usuario
+  );
+  assert.match(senhaHash, /^\$2[ab]\$12\$/);
+});
+
+test('login com credenciais inválidas retorna a mensagem documentada', async t => {
+  stub(t, usuarioModel, 'autenticarUsuario', async () => null);
+
+  const resposta = await request(app)
+    .post('/auth/login')
+    .send({ email: 'qa@example.invalid', senha: 'senha-incorreta' });
+
+  assert.equal(resposta.status, 401);
+  assert.deepEqual(resposta.body, {
+    erro: { mensagem: 'Credenciais inválidas' },
   });
 });
 
@@ -159,7 +208,40 @@ test('projetos mantêm o escopo do usuário e os nomes de data da API', async t 
   assert.deepEqual(filtro, { id: 8, usuario_id: 27 });
 });
 
-test('tarefas formatam relações e incluem somente nomes de usuário e projeto', async t => {
+test('erros conhecidos do Prisma retornam conflitos e ids inválidos sem status 500', async t => {
+  stub(t, prisma, '$transaction', callback => callback(prisma));
+  stub(t, prisma.usuarios, 'create', async () => {
+    throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: '6.19.3',
+      meta: { target: ['email'] },
+    });
+  });
+
+  const emailDuplicado = await request(app)
+    .post('/usuarios')
+    .send({ nome: 'Usuário', email: 'duplicado@example.invalid', senha: 'senha' });
+  assert.equal(emailDuplicado.status, 409);
+  assert.equal(emailDuplicado.body.erro.mensagem, 'Já existe um registro com esse valor');
+  assert.deepEqual(emailDuplicado.body.erro.detalhes, ['Valor repetido em: email']);
+
+  stub(t, prisma.projetos, 'create', async () => {
+    throw new Prisma.PrismaClientKnownRequestError('Foreign key constraint failed', {
+      code: 'P2003',
+      clientVersion: '6.19.3',
+      meta: { field_name: 'usuario_id' },
+    });
+  });
+
+  const idInexistente = await request(app)
+    .post('/projetos')
+    .set('Authorization', `Bearer ${tokenPara(999)}`)
+    .send({ nome: 'Projeto sem usuário' });
+  assert.equal(idInexistente.status, 400);
+  assert.equal(idInexistente.body.erro.mensagem, 'Um dos ids informados não existe');
+});
+
+test('tarefas formatam relações e incluem nomes de usuário, projeto e prioridade', async t => {
   const registro = {
     id: 3,
     texto: 'Tarefa',
@@ -175,6 +257,7 @@ test('tarefas formatam relações e incluem somente nomes de usuário e projeto'
     concluido_em: null,
     projetos: { nome: 'Projeto' },
     usuarios: { nome: 'Usuário' },
+    prioridades: { descricao: 'Alta', cor: '#e74c3c' },
   };
   let consulta;
   let filtroContagem;
@@ -191,19 +274,22 @@ test('tarefas formatam relações e incluem somente nomes de usuário e projeto'
     filtroContagem = args.where;
     return 2;
   });
-  stub(t, prisma.tarefas, 'deleteMany', async args => {
-    assert.deepEqual(args.where, { id: 3, criado_por_id: 27 });
-    return { count: 1 };
+  stub(t, prisma.tarefas, 'delete', async args => {
+    assert.deepEqual(args.where, { id: 3 });
+    return registro;
   });
 
   const tarefas = await tarefaModel.listarTarefas(27);
   assert.deepEqual(consulta.include, {
     projetos: { select: { nome: true } },
     usuarios: { select: { nome: true } },
+    prioridades: { select: { descricao: true, cor: true } },
   });
   assert.equal(tarefas[0].coluna, 'andamento');
   assert.equal(tarefas[0].projeto, 'Projeto');
   assert.equal(tarefas[0].usuario, 'Usuário');
+  assert.equal(tarefas[0].prioridade, 'Alta');
+  assert.equal(tarefas[0].prioridade_cor, '#e74c3c');
   assert.equal(tarefas[0].projetoId, 8);
   assert.equal(tarefas[0].criadoPorId, 27);
   assert.equal(Object.hasOwn(tarefas[0], 'senha_hash'), false);
@@ -299,7 +385,7 @@ test('prioridades ativas e usuários são consultados sem expor hashes', async t
   let chamadaUsuarios;
   stub(t, prisma.prioridades, 'findMany', async args => {
     chamadaPrioridades = args;
-    return [{ id: 1, descricao: 'Baixa' }];
+    return [{ id: 1, descricao: 'Baixa', cor: '#3ddc97' }];
   });
   stub(t, prisma.usuarios, 'findMany', async args => {
     chamadaUsuarios = args;
@@ -313,10 +399,10 @@ test('prioridades ativas e usuários são consultados sem expor hashes', async t
   });
 
   assert.deepEqual(await prioridadesModel.listarPrioridades(), [
-    { id: 1, descricao: 'Baixa' },
+    { id: 1, descricao: 'Baixa', cor: '#3ddc97' },
   ]);
   assert.deepEqual(chamadaPrioridades.where, { ativo: true });
-  assert.deepEqual(chamadaPrioridades.select, { id: true, descricao: true });
+  assert.deepEqual(chamadaPrioridades.select, { id: true, descricao: true, cor: true });
 
   const usuarios = await usuarioModel.listarUsuarios();
   assert.deepEqual(chamadaUsuarios.select, {

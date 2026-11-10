@@ -1,9 +1,11 @@
+// @ts-check
+
 const prisma = require('../database/prisma');
 
 async function listarPrioridades() {
   return prisma.prioridades.findMany({
     where: { ativo: true },
-    select: { id: true, descricao: true },
+    select: { id: true, descricao: true, cor: true },
     orderBy: { id: 'asc' },
   });
 }
