@@ -24,9 +24,7 @@ function tratarErros(erro, req, res, next) {
   return res.status(status).json({
     erro: {
       mensagem,
-      ...(!erroInterno && erro.detalhes !== undefined
-        ? { detalhes: erro.detalhes }
-        : {}),
+      ...(!erroInterno ? { detalhes: erro.detalhes } : {}),
     },
   });
 }

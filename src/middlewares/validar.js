@@ -9,11 +9,15 @@ function validar(schema, origem = 'body') {
     for (const [campo, regra] of Object.entries(schema)) {
       const valor = dados[campo];
       const ausente = valor === undefined || valor === null || valor === '';
+      const preenchidoPorAlias = regra.aliases && regra.aliases.some(alias => {
+        const valorAlias = dados[alias];
+        return valorAlias !== undefined && valorAlias !== null && valorAlias !== '';
+      });
 
-      if (!regra.obrigatorio && ausente) continue;
+      if ((!regra.obrigatorio || preenchidoPorAlias) && ausente) continue;
 
       if (ausente) {
-        erros.push(`${campo} é obrigatório`);
+        erros.push(`O campo '${campo}' é obrigatório`);
         continue;
       }
 
@@ -22,7 +26,7 @@ function validar(schema, origem = 'body') {
         const numero = converter && typeof valor === 'string' ? Number(valor) : valor;
 
         if (!Number.isInteger(numero) || numero <= 0) {
-          erros.push(`${campo} deve ser um número inteiro positivo`);
+          erros.push(`O campo '${campo}' deve ser inteiro positivo`);
           continue;
         }
 
@@ -32,11 +36,22 @@ function validar(schema, origem = 'body') {
         }
       } else if (regra.tipo === 'texto') {
         if (typeof valor !== 'string' || !valor.trim()) {
-          erros.push(`${campo} deve ser um texto não vazio`);
+          erros.push(`O campo '${campo}' deve ser um texto não vazio`);
+          continue;
+        }
+
+        if (regra.minimo !== undefined && valor.length < regra.minimo) {
+          erros.push(`O campo '${campo}' deve ter pelo menos ${regra.minimo} caracteres`);
+        } else if (regra.maximo !== undefined && valor.length > regra.maximo) {
+          erros.push(`O campo '${campo}' deve ter no máximo ${regra.maximo} caracteres`);
+        }
+
+        if (regra.valores && !regra.valores.includes(valor)) {
+          erros.push(`O campo '${campo}' deve ser um de: ${regra.valores.join(', ')}`);
         }
       } else if (regra.tipo === 'email') {
         if (typeof valor !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valor)) {
-          erros.push(`${campo} deve ser um endereço de e-mail válido`);
+          erros.push(`O campo '${campo}' deve ser um endereço de e-mail válido`);
         }
       }
     }

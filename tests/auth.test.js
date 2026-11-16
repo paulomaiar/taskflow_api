@@ -1,4 +1,4 @@
-const test = require('node:test');
+const { test: jestTest } = require('@jest/globals');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const request = require('supertest');
@@ -10,6 +10,25 @@ const usuarioModel = require('../src/models/usuarios.models');
 const projetoModel = require('../src/models/projeto.model');
 const tarefaModel = require('../src/models/tarefas.models');
 const prioridadesModel = require('../src/models/prioridades.models');
+
+function test(nome, executar) {
+  jestTest(nome, async () => {
+    const finalizadores = [];
+    const contexto = {
+      after(finalizador) {
+        finalizadores.push(finalizador);
+      },
+    };
+
+    try {
+      await executar(contexto);
+    } finally {
+      for (const finalizador of finalizadores.reverse()) {
+        await finalizador();
+      }
+    }
+  });
+}
 
 function stub(t, alvo, metodo, implementacao) {
   const original = alvo[metodo];
@@ -45,7 +64,7 @@ test('params e filtros inválidos retornam 400 com detalhes textuais', async () 
   assert.deepEqual(respostaId.body, {
     erro: {
       mensagem: 'Dados inválidos',
-      detalhes: ['id deve ser um número inteiro positivo'],
+      detalhes: ["O campo 'id' deve ser inteiro positivo"],
     },
   });
 
@@ -54,7 +73,7 @@ test('params e filtros inválidos retornam 400 com detalhes textuais', async () 
   assert.deepEqual(respostaFiltro.body, {
     erro: {
       mensagem: 'Dados inválidos',
-      detalhes: ['projetoId deve ser um número inteiro positivo'],
+      detalhes: ["O campo 'projetoId' deve ser inteiro positivo"],
     },
   });
 });
@@ -220,7 +239,7 @@ test('erros conhecidos do Prisma retornam conflitos e ids inválidos sem status 
 
   const emailDuplicado = await request(app)
     .post('/usuarios')
-    .send({ nome: 'Usuário', email: 'duplicado@example.invalid', senha: 'senha' });
+    .send({ nome: 'Usuário', email: 'duplicado@example.invalid', senha: 'senha-segura' });
   assert.equal(emailDuplicado.status, 409);
   assert.equal(emailDuplicado.body.erro.mensagem, 'Já existe um registro com esse valor');
   assert.deepEqual(emailDuplicado.body.erro.detalhes, ['Valor repetido em: email']);

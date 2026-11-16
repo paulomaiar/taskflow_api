@@ -5,7 +5,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "node --test tests/auth.test.js",
+    "test": "jest",
     "postinstall": "prisma generate",
     "db:migrate": "node scripts/migrate.js",
     "db:seed": "node scripts/seed.js",
@@ -26,6 +26,7 @@
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
+    "jest": "^30.2.0",
     "nodemon": "^3.1.14",
     "prisma": "6.19.3",
     "supertest": "^7.2.2"
