@@ -6,7 +6,7 @@ const swaggerUi = require('swagger-ui-express');
 const openapi = require('./docs/openapi');
 
 if (!process.env.JWT_SECRET) {
-  process.env.JWT_SECRET = 'taskflow-secret-development';
+  throw new Error('JWT_SECRET deve estar configurado');
 }
 
 const logger = require('./middlewares/logger');

@@ -77,7 +77,7 @@ async function buscarPorId(req, res) {
   const tarefa = await tarefaModel.buscarTarefaPorId(id, req.usuario.id);
 
   if (!tarefa) {
-    throw criarErro(404, 'Recurso não encontrado');
+    throw criarErro(404, 'Tarefa não encontrada');
   }
 
   return res.json(tarefa);

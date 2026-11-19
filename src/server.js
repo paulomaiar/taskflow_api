@@ -1,9 +1,5 @@
 require('dotenv').config();
 
-if (!process.env.JWT_SECRET) {
-  process.env.JWT_SECRET = 'taskflow-secret-development';
-}
-
 const prisma = require('./database/prisma');
 const app = require('./app');
 const PORT = process.env.PORT || 3001;

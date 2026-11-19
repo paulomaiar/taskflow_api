@@ -5,7 +5,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "jest",
+    "test": "jest --runInBand",
     "postinstall": "prisma generate",
     "db:migrate": "node scripts/migrate.js",
     "db:seed": "node scripts/seed.js",
